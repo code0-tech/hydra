@@ -1,3 +1,9 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+
 # Logs
 logs
 *.log
@@ -130,3 +136,4 @@ dist
 .pnp.*
 
 .xml
+/.idea
