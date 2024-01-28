@@ -5,18 +5,14 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "rollup -c"
+    "build": "npm run clean && tsc",
+    "clean": "rimraf dist"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-typescript": "^11.1.6",
-    "rollup": "^4.9.5",
-    "rollup-plugin-dts": "^6.1.0",
+    "rimraf": "^5.0.5",
     "typescript": "^5.3.3",
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.39.0"
   }
