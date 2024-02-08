@@ -12,6 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "graphql": "^16.8.1",
     "rimraf": "^5.0.5",
     "typescript": "^5.3.3",
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.39.0"
