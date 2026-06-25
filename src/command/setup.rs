@@ -267,7 +267,7 @@ mod tests {
     fn renders_setup_templates() -> anyhow::Result<()> {
         let props = template_props();
 
-        for template_path in ["templates/env.tmpl", "templates/docker-compose.yml.tmpl"] {
+        for template_path in ["templates/env.tera", "templates/docker-compose.yml.tera"] {
             render_template(template_path, &props)?;
         }
 

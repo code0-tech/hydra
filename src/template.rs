@@ -48,9 +48,9 @@ pub fn render_setup_templates(
 ) -> anyhow::Result<()> {
     let output_dir = output_dir.as_ref();
 
-    render_to_file("templates/env.tmpl", output_dir.join(".env"), props)?;
+    render_to_file("templates/env.tera", output_dir.join(".env"), props)?;
     render_to_file(
-        "templates/docker-compose.yml.tmpl",
+        "templates/docker-compose.yml.tera",
         output_dir.join("docker-compose.yml"),
         props,
     )?;
