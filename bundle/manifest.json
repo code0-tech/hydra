@@ -1,0 +1,153 @@
+{
+  "version": "0.1.0",
+  "steps": [
+    {
+      "id": "initial_root_mail",
+      "type": "input",
+      "section": "Admin account",
+      "prompt": "Root email",
+      "default": "root@code0.tech"
+    },
+    {
+      "id": "initial_root_password",
+      "type": "password",
+      "section": "Admin account",
+      "prompt": "Root password",
+      "confirm": true,
+      "default": "root"
+    },
+    {
+      "id": "compose_profiles",
+      "type": "multiselect",
+      "section": "Runtime profiles",
+      "prompt": "Choose profiles",
+      "join": ",",
+      "options": [
+        { "label": "ide", "value": "ide", "default": true },
+        { "label": "runtime", "value": "runtime", "default": true },
+        { "label": "ai", "value": "ide_velorum", "default": false }
+      ]
+    },
+    {
+      "id": "image_registry",
+      "type": "select",
+      "section": "Runtime artifacts",
+      "prompt": "Choose artifact registry",
+      "allow_custom": true,
+      "custom_prompt": "Custom image registry",
+      "options": [
+        { "label": "github", "value": "ghcr.io/code0-tech/reticulum/ci-builds" },
+        { "label": "gitlab", "value": "registry.gitlab.com/code0-tech/packages" }
+      ]
+    },
+    {
+      "id": "image_edition",
+      "type": "select",
+      "section": "Runtime artifacts",
+      "prompt": "Choose edition",
+      "options": [
+        { "label": "Community Edition (ce)", "value": "ce", "default": true },
+        { "label": "Cloud / Commercial (cc)", "value": "cc" }
+      ]
+    },
+    {
+      "id": "image_tag",
+      "type": "input",
+      "section": "Runtime artifacts",
+      "prompt": "Version",
+      "default": "latest"
+    }
+  ],
+  "secrets": [
+    {
+      "id": ["initial_runtime_token", "aquila_backend_token"],
+      "label": "shared Sagittarius <-> Aquila token"
+    },
+    {
+      "id": "taurus_aquila_token",
+      "label": "Taurus Aquila token"
+    },
+    {
+      "id": "draco_rest_aquila_token",
+      "label": "Draco REST Aquila token"
+    },
+    {
+      "id": "draco_cron_aquila_token",
+      "label": "Draco cron Aquila token"
+    },
+    {
+      "id": "velorum_jwt_secret",
+      "length": 32,
+      "label": "Velorum JWT secret"
+    },
+    {
+      "id": "sagittarius_db_encryption_primary_key",
+      "length": 32,
+      "label": "Sagittarius DB encryption primary key"
+    },
+    {
+      "id": "sagittarius_db_encryption_deterministic_key",
+      "length": 32,
+      "label": "Sagittarius DB encryption deterministic key"
+    },
+    {
+      "id": "sagittarius_db_encryption_key_derivation_salt",
+      "length": 32,
+      "label": "Sagittarius DB encryption key derivation salt"
+    },
+    {
+      "id": "sagittarius_rails_secret_key_base",
+      "length": 32,
+      "label": "Sagittarius Rails secret key base"
+    }
+  ],
+  "static": {
+    "hostname": "localhost",
+    "http_port": 80,
+    "https_port": 443,
+    "ssl_enabled": false,
+    "ssl_cert_file": "",
+    "ssl_key_file": "",
+    "postgres_db": "sagittarius_production",
+    "postgres_user": "sagittarius",
+    "postgres_password": "sagittarius",
+    "postgres_host": "postgres",
+    "postgres_port": 5432,
+    "aquila_log_level": "info",
+    "aquila_nats_url": "nats://nats:4222",
+    "aquila_nats_bucket": "flow_store",
+    "aquila_backend_url": "http://nginx:80",
+    "aquila_backend_unary_timeout_secs": 10,
+    "aquila_grpc_host": "0.0.0.0",
+    "aquila_grpc_port": 8081,
+    "aquila_grpc_health_service": false,
+    "aquila_grpc_connect_timeout_secs": 2,
+    "aquila_grpc_request_timeout_secs": 10,
+    "draco_rest_port": 8084,
+    "draco_rest_host": "127.0.0.1",
+    "velorum_host": "velorum",
+    "velorum_port": 50051,
+    "opentelemetry_enabled": false,
+    "opentelemetry_grpc_host": "http://localhost:4317",
+    "opentelemetry_logs_http_endpoint": "http://localhost:4318/v1/logs",
+    "opentelemetry_metrics_http_endpoint": "http://localhost:4318/v1/metrics",
+    "opentelemetry_traces_http_endpoint": "http://localhost:4318/v1/traces",
+    "sagittarius_rails_host": "sagittarius-rails-web",
+    "sagittarius_rails_port": 3000,
+    "sagittarius_cable_host": "sagittarius-rails-cable",
+    "sagittarius_cable_port": 3000,
+    "sagittarius_grpc_host": "sagittarius-grpc",
+    "sagittarius_grpc_port": 50051,
+    "sagittarius_log_level": "info",
+    "sagittarius_rails_web_threads": 3,
+    "sagittarius_rails_grpc_threads": 6,
+    "sagittarius_db_pool_size": 8,
+    "sculptor_host": "sculptor",
+    "sculptor_port": 3000
+  },
+  "templates": [
+    { "template": "env.tera", "output": ".env" },
+    { "template": "docker-compose.yml.tera", "output": "docker-compose.yml" },
+    { "template": "service.configuration.json.tera", "output": "service.configuration.json" }
+  ]
+}

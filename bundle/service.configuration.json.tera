@@ -1,0 +1,8 @@
+{
+  "actions": [],
+  "runtimes": [
+    { "identifier": "taurus", "token": "{{ taurus_aquila_token }}" },
+    { "identifier": "draco-rest", "token": "{{ draco_rest_aquila_token }}" },
+    { "identifier": "draco-cron", "token": "{{ draco_cron_aquila_token }}" }
+  ]
+}
