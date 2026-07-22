@@ -1,0 +1,44 @@
+{
+  "actions": [
+    {
+      "name": "gls",
+      "identifier": "gls-action",
+      "version": "0.0.0-experimental-2671119213-c64c074cd4fbb09109092220fa4beac39f3e4d3d",
+      "deployment": {
+        "docker": {
+          "image": "ghcr.io/code0-tech/centaurus/ci-builds/gls-action"
+        }
+      }
+    },
+    {
+      "name": "shopware",
+      "identifier": "shopware-action",
+      "version": "0.0.0-experimental-2671119213-c64c074cd4fbb09109092220fa4beac39f3e4d3d",
+      "deployment": {
+        "docker": {
+          "image": "ghcr.io/code0-tech/centaurus/ci-builds/shopware-action"
+        }
+      }
+    },
+    {
+      "name": "shopify",
+      "identifier": "shopify-action",
+      "version": "0.0.0-experimental-2671119213-c64c074cd4fbb09109092220fa4beac39f3e4d3d",
+      "deployment": {
+        "docker": {
+          "image": "ghcr.io/code0-tech/centaurus/ci-builds/shopify-action"
+        }
+      }
+    },
+    {
+      "name": "woocommerce",
+      "identifier": "woocommerce-action",
+      "version": "0.0.0-experimental-2671119213-c64c074cd4fbb09109092220fa4beac39f3e4d3d",
+      "deployment": {
+        "docker": {
+          "image": "ghcr.io/code0-tech/centaurus/ci-builds/woocommerce-action"
+        }
+      }
+    }
+  ]
+}
