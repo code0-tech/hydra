@@ -2,6 +2,13 @@
 name = "codezero"
 version = "0.1.0"
 edition = "2024"
+description = "A CLI setup wizard for running CodeZero locally"
+license = "MIT"
+repository = "https://github.com/code0-tech/hydra"
+homepage = "https://codezero.build"
+readme = "README.md"
+keywords = ["codezero", "cli", "setup"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0.102"
