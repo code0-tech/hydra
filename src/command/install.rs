@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::{
     action::{
@@ -6,11 +6,18 @@ use crate::{
         action_fragment_path, parse_install_spec,
     },
     bundle::generate_token,
+    env_file,
     runner::{Runner, default_runner},
     ui,
 };
 
+const ENV_PATH: &str = ".codezero/.env";
+
 pub fn install(index_path: Option<PathBuf>, spec: String) -> anyhow::Result<()> {
+    if !fs::exists(ENV_PATH)? {
+        anyhow::bail!("No CodeZero setup found. Run `codezero setup` first.");
+    }
+
     let (name, tag_override) = parse_install_spec(&spec);
     let catalog = ActionCatalog::load(index_path.as_deref())?;
     let entry = catalog.find(name).ok_or_else(|| {
@@ -19,20 +26,38 @@ pub fn install(index_path: Option<PathBuf>, spec: String) -> anyhow::Result<()> 
             catalog.names().join(", ")
         )
     })?;
-    let tag = tag_override.unwrap_or(entry.version.as_str());
+
+    let env = env_file::read_all(ENV_PATH)?;
+    check_dependencies(entry, &catalog, &env)?;
+
+    let tag = match tag_override {
+        Some(tag) => tag.to_string(),
+        None => env
+            .get("ACTION_IMAGE_TAG")
+            .filter(|tag| !tag.is_empty())
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No ACTION_IMAGE_TAG set in {ENV_PATH}. Run `codezero configure` to set one, or specify a version explicitly (e.g. `{name}@1.2.3`)."
+                )
+            })?,
+    };
     let token = generate_token(64);
 
     let mut config = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?;
     let updated = config.upsert_action(&entry.identifier, &token);
     config.save(SERVICE_CONFIGURATION_PATH)?;
 
-    write_action_compose_fragment(entry, tag, &token)?;
+    write_action_compose_fragment(entry, &tag, &token)?;
 
     ui::success_line(&format!(
         "{} {} ({tag})",
         if updated { "Updated" } else { "Installed" },
         entry.identifier
     ));
+    if !entry.description.is_empty() {
+        ui::muted_line(&entry.description);
+    }
 
     let runner = default_runner();
     match runner
@@ -43,6 +68,40 @@ pub fn install(index_path: Option<PathBuf>, spec: String) -> anyhow::Result<()> 
         Err(error) => ui::warn_line(&format!(
             "Couldn't apply the change automatically ({error}). Run `codezero start` to apply."
         )),
+    }
+
+    Ok(())
+}
+
+/// Checks that every action this one depends on is actually usable first.
+/// `rest-action`/`cron-action` ship inside the base stack itself, gated
+/// behind the `runtime` compose profile, rather than being something
+/// `install` creates a compose fragment for - so they're checked against
+/// `COMPOSE_PROFILES` instead of the installed-actions directory.
+fn check_dependencies(entry: &ActionEntry, catalog: &ActionCatalog, env: &HashMap<String, String>) -> anyhow::Result<()> {
+    let active_profiles: Vec<&str> = env
+        .get("COMPOSE_PROFILES")
+        .map(|value| value.split(',').collect())
+        .unwrap_or_default();
+
+    for dependency in &entry.dependencies {
+        anyhow::ensure!(
+            catalog.find(dependency).is_some(),
+            "{} depends on '{dependency}', which isn't a known action.",
+            entry.identifier
+        );
+
+        let satisfied = match dependency.as_str() {
+            "rest-action" | "cron-action" => active_profiles.contains(&"runtime"),
+            other => action_fragment_path(other).exists(),
+        };
+
+        anyhow::ensure!(
+            satisfied,
+            "{} depends on '{dependency}', which isn't installed/enabled. Run `codezero plugin install {dependency}` \
+             (or, if it's built into the base stack, `codezero configure` and enable the 'runtime' profile).",
+            entry.identifier
+        );
     }
 
     Ok(())
@@ -68,4 +127,77 @@ fn write_action_compose_fragment(entry: &ActionEntry, tag: &str, token: &str) ->
     fs::write(action_fragment_path(&entry.identifier), compose)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_entry(dependencies: Vec<&str>) -> ActionEntry {
+        serde_json::from_value(serde_json::json!({
+            "name": "gls",
+            "identifier": "gls-action",
+            "deployment": { "docker": { "image": "ghcr.io/code0-tech/centaurus/ci-builds/gls-action" } },
+            "dependencies": dependencies
+        }))
+        .unwrap()
+    }
+
+    fn fixture_catalog() -> ActionCatalog {
+        serde_json::from_value(serde_json::json!({
+            "actions": [
+                {
+                    "name": "rest-action",
+                    "identifier": "rest-action",
+                    "deployment": { "docker": { "image": "ghcr.io/code0-tech/centaurus/ci-builds/rest-action" } }
+                },
+                {
+                    "name": "cron-action",
+                    "identifier": "cron-action",
+                    "deployment": { "docker": { "image": "ghcr.io/code0-tech/centaurus/ci-builds/cron-action" } }
+                }
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn allows_install_when_there_are_no_dependencies() {
+        let entry = fixture_entry(vec![]);
+        let catalog = fixture_catalog();
+        let env = HashMap::new();
+
+        assert!(check_dependencies(&entry, &catalog, &env).is_ok());
+    }
+
+    #[test]
+    fn allows_install_when_the_runtime_profile_is_active() {
+        let entry = fixture_entry(vec!["rest-action"]);
+        let catalog = fixture_catalog();
+        let mut env = HashMap::new();
+        env.insert("COMPOSE_PROFILES".to_string(), "ide,runtime".to_string());
+
+        assert!(check_dependencies(&entry, &catalog, &env).is_ok());
+    }
+
+    #[test]
+    fn blocks_install_when_the_runtime_profile_is_missing() {
+        let entry = fixture_entry(vec!["rest-action"]);
+        let catalog = fixture_catalog();
+        let mut env = HashMap::new();
+        env.insert("COMPOSE_PROFILES".to_string(), "ide".to_string());
+
+        let error = check_dependencies(&entry, &catalog, &env).unwrap_err();
+        assert!(error.to_string().contains("rest-action"));
+    }
+
+    #[test]
+    fn blocks_install_for_a_dependency_that_is_not_a_known_action() {
+        let entry = fixture_entry(vec!["something-nonexistent"]);
+        let catalog = fixture_catalog();
+        let mut env = HashMap::new();
+        env.insert("COMPOSE_PROFILES".to_string(), "ide,runtime".to_string());
+
+        assert!(check_dependencies(&entry, &catalog, &env).is_err());
+    }
 }

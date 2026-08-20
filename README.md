@@ -59,10 +59,12 @@ done it prints the URL CodeZero is running at.
 | `codezero stop` | Stop the stack and free its resources. |
 | `codezero status` | Show each service's current state. |
 | `codezero logs [service] [-f] [--tail N]` | Stream logs for one service, or everything. |
+| `codezero configure` | Re-run the setup wizard against your existing install — prompts are pre-filled with current values, existing secrets are kept as-is. |
 | `codezero upgrade [--tag] [--registry] [--edition] [--dev]` | Bump the running image version in place — pulls and recreates only what changed, without touching your existing secrets/passwords. Prompts for a version if no flag is given. |
-| `codezero install <name>` | Add an action (e.g. `codezero install gls`, or `gls@1.2.3` for a specific version). See available actions in `actions/index.json`. |
-| `codezero uninstall <name>` | Remove a previously installed action. |
-| `codezero reset` | Stop everything, wipe `.codezero/`, and run `setup` again from scratch. Destructive — generates fresh secrets and passwords. Prefer `upgrade` if you just want a newer version. |
+| `codezero plugin ls` | List every action in the catalog (fetched live from centaurus) and which ones you've installed. |
+| `codezero plugin install <name>` | Add an action (e.g. `codezero plugin install gls-action`, or `gls-action@1.2.3` for a specific version). Fails with a clear message if the action needs a capability (like `rest-action`) your setup doesn't have enabled. |
+| `codezero plugin uninstall <name>` | Remove a previously installed action. |
+| `codezero reset` | Stop everything, wipe `.codezero/`, and run `setup` again from scratch. Destructive — generates fresh secrets and passwords. Prefer `upgrade`/`configure` if you just want to change something. |
 
 ## How it's put together
 

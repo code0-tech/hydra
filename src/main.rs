@@ -45,22 +45,9 @@ enum Commands {
         #[arg(long)]
         bundle: Option<PathBuf>,
     },
-    /// Add an action to your CodeZero setup, e.g. `codezero install gls`.
-    Install {
-        /// Which action to install, e.g. `gls`, or `gls@1.2.3` for a specific version
-        name: String,
-        /// Where to look up available actions (defaults to the catalog built into this binary)
-        #[arg(long)]
-        index: Option<PathBuf>,
-    },
-    /// Remove a previously installed action.
-    Uninstall {
-        /// Which action to remove (the same name you used with `install`)
-        name: String,
-        /// Where to look up available actions (defaults to the catalog built into this binary)
-        #[arg(long)]
-        index: Option<PathBuf>,
-    },
+    /// List, install, and remove actions ("plugins").
+    #[command(subcommand)]
+    Plugin(PluginCommands),
     /// Show the status of CodeZero's services.
     Status,
     /// Stream logs from CodeZero (or a single service).
@@ -91,6 +78,32 @@ enum Commands {
     },
 }
 
+#[derive(Subcommand)]
+enum PluginCommands {
+    /// List available actions (and which ones you've already installed).
+    Ls {
+        /// Where to look up available actions (defaults to the catalog built into this binary)
+        #[arg(long)]
+        index: Option<PathBuf>,
+    },
+    /// Add an action to your CodeZero setup, e.g. `codezero plugin install gls-action`.
+    Install {
+        /// Which action to install, e.g. `gls-action`, or `gls-action@1.2.3` for a specific version
+        name: String,
+        /// Where to look up available actions (defaults to the catalog built into this binary)
+        #[arg(long)]
+        index: Option<PathBuf>,
+    },
+    /// Remove a previously installed action.
+    Uninstall {
+        /// Which action to remove (the same name you used with `install`)
+        name: String,
+        /// Where to look up available actions (defaults to the catalog built into this binary)
+        #[arg(long)]
+        index: Option<PathBuf>,
+    },
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     preflight::check()?;
@@ -101,8 +114,11 @@ fn main() -> anyhow::Result<()> {
         Commands::Stop => command::stop::stop(),
         Commands::Reset => command::reset::reset(),
         Commands::Configure { bundle } => command::configure::configure(bundle),
-        Commands::Install { name, index } => command::install::install(index, name),
-        Commands::Uninstall { name, index } => command::uninstall::uninstall(index, name),
+        Commands::Plugin(plugin_command) => match plugin_command {
+            PluginCommands::Ls { index } => command::plugins::plugins(index),
+            PluginCommands::Install { name, index } => command::install::install(index, name),
+            PluginCommands::Uninstall { name, index } => command::uninstall::uninstall(index, name),
+        },
         Commands::Status => command::status::status(),
         Commands::Logs { service, follow, tail } => command::logs::logs(service, follow, tail),
         Commands::Upgrade {

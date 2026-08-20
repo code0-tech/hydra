@@ -6,10 +6,16 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::embedded;
-
 pub const SERVICE_CONFIGURATION_PATH: &str = ".codezero/service.configuration.json";
 pub const ACTIONS_DIR: &str = ".codezero/actions";
+
+/// The centaurus repo/branch the action catalog is fetched from: one
+/// `actions/<name>/manifest.json` per action, rather than a single
+/// hand-maintained index file, so adding or updating an action doesn't
+/// require a hydra release. `feat/action-manifest` until these manifests
+/// land on `main`.
+const CATALOG_REPO: &str = "code0-tech/centaurus";
+const CATALOG_BRANCH: &str = "feat/action-manifest";
 
 pub fn action_fragment_path(identifier: &str) -> PathBuf {
     Path::new(ACTIONS_DIR).join(format!("{identifier}.yml"))
@@ -67,8 +73,14 @@ pub struct ActionCatalog {
 pub struct ActionEntry {
     pub name: String,
     pub identifier: String,
-    pub version: String,
+    #[serde(default)]
+    pub description: String,
     pub deployment: Deployment,
+    /// Other actions (by identifier) this one needs installed/enabled
+    /// before it's actually usable - see
+    /// `command::install::check_dependencies`.
+    #[serde(default)]
+    pub dependencies: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,24 +97,77 @@ pub struct DockerDeployment {
     pub auth_token_var: String,
 }
 
-impl ActionCatalog {
-    /// Reads the catalog from `path` when given, or falls back to the copy
-    /// baked into the binary - same disk-vs-embedded split as `SetupBundle`.
-    pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
-        let data = match path {
-            Some(path) => fs::read_to_string(path)
-                .map_err(|error| anyhow::anyhow!("Couldn't read action catalog at {}: {error}", path.display()))?,
-            None => embedded::ACTIONS_INDEX_JSON.to_string(),
-        };
+#[derive(Debug, Deserialize)]
+struct GitTree {
+    tree: Vec<GitTreeEntry>,
+}
 
-        let catalog: ActionCatalog =
-            serde_json::from_str(&data).map_err(|error| anyhow::anyhow!("Couldn't parse action catalog: {error}"))?;
+#[derive(Debug, Deserialize)]
+struct GitTreeEntry {
+    path: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
 
-        Ok(catalog)
+/// Fetches every `actions/<name>/manifest.json` on `CATALOG_BRANCH` and
+/// assembles them into a catalog. One API call lists the tree, then each
+/// manifest is fetched from raw.githubusercontent.com (no auth, no API rate
+/// limit) rather than through the contents API.
+fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
+    let tree_url = format!("https://api.github.com/repos/{CATALOG_REPO}/git/trees/{CATALOG_BRANCH}?recursive=1");
+
+    let tree: GitTree = ureq::get(&tree_url)
+        .set("User-Agent", "codezero-cli")
+        .call()
+        .map_err(|error| anyhow::anyhow!("Couldn't reach the action catalog: {error}"))?
+        .into_json()
+        .map_err(|error| anyhow::anyhow!("Couldn't parse the action catalog listing: {error}"))?;
+
+    let manifest_paths: Vec<&str> = tree
+        .tree
+        .iter()
+        .filter(|entry| entry.kind == "blob" && entry.path.starts_with("actions/") && entry.path.ends_with("/manifest.json"))
+        .map(|entry| entry.path.as_str())
+        .collect();
+
+    let mut actions = Vec::with_capacity(manifest_paths.len());
+    for path in manifest_paths {
+        let raw_url = format!("https://raw.githubusercontent.com/{CATALOG_REPO}/{CATALOG_BRANCH}/{path}");
+        let entry: ActionEntry = ureq::get(&raw_url)
+            .call()
+            .map_err(|error| anyhow::anyhow!("Couldn't fetch {path}: {error}"))?
+            .into_json()
+            .map_err(|error| anyhow::anyhow!("Couldn't parse {path}: {error}"))?;
+        actions.push(entry);
     }
 
+    Ok(ActionCatalog { actions })
+}
+
+impl ActionCatalog {
+    /// Reads the catalog from `path` when given (e.g. a local manifest.json
+    /// for testing), or fetches the live catalog from centaurus otherwise.
+    pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
+        match path {
+            Some(path) => {
+                let data = fs::read_to_string(path)
+                    .map_err(|error| anyhow::anyhow!("Couldn't read action catalog at {}: {error}", path.display()))?;
+                serde_json::from_str(&data)
+                    .map_err(|error| anyhow::anyhow!("Couldn't parse action catalog at {}: {error}", path.display()))
+            }
+            None => fetch_remote_catalog(),
+        }
+    }
+
+    /// Matches by `name`, `identifier`, or the identifier with a trailing
+    /// `-action` dropped - so `gls-action` is installable as `gls` without
+    /// every manifest having to redundantly declare a short `name` too.
     pub fn find(&self, name: &str) -> Option<&ActionEntry> {
-        self.actions.iter().find(|action| action.name == name)
+        self.actions.iter().find(|action| {
+            action.name == name
+                || action.identifier == name
+                || action.identifier.strip_suffix("-action") == Some(name)
+        })
     }
 
     pub fn names(&self) -> Vec<&str> {
@@ -205,29 +270,87 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_the_bundled_catalog() {
-        let catalog = ActionCatalog::load(Some(Path::new("actions/index.json"))).expect("catalog should load");
+    fn loads_a_catalog_from_disk() {
+        let path = std::env::temp_dir().join(format!("hydra-action-catalog-test-{}.json", std::process::id()));
+        fs::write(
+            &path,
+            r#"{
+                "actions": [
+                    {
+                        "name": "gls",
+                        "identifier": "gls-action",
+                        "description": "GLS shipping integration",
+                        "deployment": { "docker": { "image": "ghcr.io/code0-tech/centaurus/ci-builds/gls-action" } },
+                        "dependencies": ["rest-action"]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
 
-        assert_eq!(catalog.actions.len(), 4);
-        let gls = catalog.find("gls").expect("gls should be in the catalog");
+        let catalog = ActionCatalog::load(Some(&path)).expect("catalog should load");
+
+        assert_eq!(catalog.actions.len(), 1);
+        let gls = catalog.find("gls").expect("gls should be findable by name");
         assert_eq!(gls.identifier, "gls-action");
         assert_eq!(gls.deployment.docker.aquila_url_var, "AQUILA_URL");
         assert_eq!(gls.deployment.docker.auth_token_var, "AUTH_TOKEN");
+        assert_eq!(gls.dependencies, vec!["rest-action"]);
+
+        let by_identifier = catalog.find("gls-action").expect("gls should also be findable by identifier");
+        assert_eq!(by_identifier.name, "gls");
+
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn finds_an_action_by_identifier_with_the_action_suffix_stripped() {
+        let path = std::env::temp_dir().join(format!("hydra-action-catalog-test-{}-suffix.json", std::process::id()));
+        fs::write(
+            &path,
+            r#"{
+                "actions": [
+                    {
+                        "name": "shopify-action",
+                        "identifier": "shopify-action",
+                        "deployment": { "docker": { "image": "ghcr.io/code0-tech/centaurus/ci-builds/shopify-action" } }
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let catalog = ActionCatalog::load(Some(&path)).expect("catalog should load");
+        let entry = catalog.find("shopify").expect("shopify should resolve via the stripped identifier");
+        assert_eq!(entry.identifier, "shopify-action");
+
+        fs::remove_file(&path).unwrap();
     }
 
     #[test]
     fn unknown_action_is_not_found() {
-        let catalog = ActionCatalog::load(Some(Path::new("actions/index.json"))).expect("catalog should load");
+        let path = std::env::temp_dir().join(format!("hydra-action-catalog-test-{}-empty.json", std::process::id()));
+        fs::write(&path, r#"{"actions": []}"#).unwrap();
+
+        let catalog = ActionCatalog::load(Some(&path)).expect("catalog should load");
         assert!(catalog.find("nonexistent").is_none());
+
+        fs::remove_file(&path).unwrap();
     }
 
     #[test]
-    fn loads_the_embedded_catalog_identically_to_disk() {
-        let disk = ActionCatalog::load(Some(Path::new("actions/index.json"))).expect("disk catalog should load");
-        let embedded = ActionCatalog::load(None).expect("embedded catalog should load");
+    fn dependencies_default_to_empty_when_omitted() {
+        let entry: ActionEntry = serde_json::from_str(
+            r#"{
+                "name": "rest-action",
+                "identifier": "rest-action",
+                "description": "Webhook triggered by an incoming HTTP request.",
+                "deployment": { "docker": { "image": "ghcr.io/code0-tech/centaurus/ci-builds/rest-action" } }
+            }"#,
+        )
+        .expect("manifest should parse");
 
-        assert_eq!(disk.actions.len(), embedded.actions.len());
-        assert_eq!(disk.names(), embedded.names());
+        assert!(entry.dependencies.is_empty());
     }
 
     #[test]

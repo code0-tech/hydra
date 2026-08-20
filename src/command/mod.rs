@@ -1,6 +1,7 @@
 pub mod configure;
 pub mod install;
 pub mod logs;
+pub mod plugins;
 pub mod reset;
 pub mod setup;
 pub mod start;
