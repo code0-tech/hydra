@@ -1,6 +1,10 @@
+pub mod configure;
 pub mod install;
+pub mod logs;
 pub mod reset;
 pub mod setup;
 pub mod start;
+pub mod status;
 pub mod stop;
 pub mod uninstall;
+pub mod upgrade;
