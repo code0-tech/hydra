@@ -7,12 +7,14 @@ use serde_json::{Map, Value};
 use crate::{
     action::{SERVICE_CONFIGURATION_PATH, ServiceConfiguration, resolve_dev_tag},
     bundle::{BundleSource, Choice, SetupBundle, Step, default_choice, generate_token, join_multiselect},
+    env_file,
     runner::{Runner, default_runner},
     template::render_setup_templates,
     ui,
 };
 
 const BANNER: &str = include_str!("../../assets/banner.txt");
+const ENV_PATH: &str = ".codezero/.env";
 
 fn print_banner(title: &str, subtitle: &str) {
     println!();
@@ -295,28 +297,6 @@ pub(crate) fn run_wizard(
     Ok(context)
 }
 
-fn context_str<'a>(context: &'a Map<String, Value>, key: &str) -> anyhow::Result<&'a str> {
-    context
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("setup bundle context is missing string field '{key}'"))
-}
-
-fn context_u16(context: &Map<String, Value>, key: &str) -> anyhow::Result<u16> {
-    context
-        .get(key)
-        .and_then(Value::as_u64)
-        .and_then(|value| u16::try_from(value).ok())
-        .ok_or_else(|| anyhow::anyhow!("setup bundle context is missing numeric field '{key}'"))
-}
-
-fn context_bool(context: &Map<String, Value>, key: &str) -> anyhow::Result<bool> {
-    context
-        .get(key)
-        .and_then(Value::as_bool)
-        .ok_or_else(|| anyhow::anyhow!("setup bundle context is missing boolean field '{key}'"))
-}
-
 pub fn setup(bundle_path: Option<PathBuf>, dev: bool) -> anyhow::Result<()> {
     let source = BundleSource::from_arg(bundle_path);
     let bundle = SetupBundle::load(&source)?;
@@ -354,20 +334,26 @@ pub fn setup(bundle_path: Option<PathBuf>, dev: bool) -> anyhow::Result<()> {
     ui::muted_line("Starting CodeZero now. This can take a few minutes the first time.");
 
     default_runner().start()?;
-    print_completion_links(&context)?;
+    print_completion_links(&env_file::read_all(ENV_PATH)?)?;
 
     Ok(())
 }
 
-fn print_completion_links(context: &Map<String, Value>) -> anyhow::Result<()> {
-    let ssl_enabled = context_bool(context, "ssl_enabled")?;
+/// `hostname`/`http_port`/`https_port`/`ssl_enabled` aren't wizard steps -
+/// they come from whatever reticulum's vendored `.env` already has (see
+/// `template::patch_env`), so the app URL is read back from the file
+/// `render_setup_templates` just wrote rather than duplicated into
+/// `manifest.json`.
+fn print_completion_links(env: &HashMap<String, String>) -> anyhow::Result<()> {
+    let ssl_enabled = env.get("SSL_ENABLED").map(String::as_str) == Some("true");
     let scheme = if ssl_enabled { "https" } else { "http" };
-    let port = if ssl_enabled {
-        context_u16(context, "https_port")?
-    } else {
-        context_u16(context, "http_port")?
-    };
-    let hostname = context_str(context, "hostname")?;
+    let port_key = if ssl_enabled { "HTTPS_PORT" } else { "HTTP_PORT" };
+    let port = env
+        .get(port_key)
+        .ok_or_else(|| anyhow::anyhow!("{ENV_PATH} is missing {port_key}"))?;
+    let hostname = env
+        .get("HOSTNAME")
+        .ok_or_else(|| anyhow::anyhow!("{ENV_PATH} is missing HOSTNAME"))?;
     let app_url = format!("{scheme}://{hostname}:{port}");
 
     println!();
@@ -390,8 +376,11 @@ fn print_completion_links(context: &Map<String, Value>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::template::render_template;
 
+    /// Every value the wizard itself actually produces (steps + secrets) -
+    /// everything else `docker-compose.yml`/`.env` need is a default already
+    /// sitting in reticulum's vendored `.env`, not something codezero
+    /// generates or duplicates.
     fn fixture_context() -> Map<String, Value> {
         let entries: Vec<(&str, Value)> = vec![
             ("initial_root_mail", "root@code0.tech".into()),
@@ -401,76 +390,17 @@ mod tests {
             ("image_registry", "ghcr.io/code0-tech/reticulum/ci-builds".into()),
             ("image_tag", "latest".into()),
             ("image_edition", "ce".into()),
-            ("hostname", "localhost".into()),
-            ("http_port", 80.into()),
-            ("https_port", 443.into()),
-            ("ssl_enabled", false.into()),
-            ("ssl_cert_file", "".into()),
-            ("ssl_key_file", "".into()),
-            ("postgres_db", "sagittarius_production".into()),
-            ("postgres_user", "sagittarius".into()),
-            ("postgres_password", "sagittarius".into()),
-            ("postgres_host", "postgres".into()),
-            ("postgres_port", 5432.into()),
-            ("aquila_log_level", "info".into()),
-            ("aquila_nats_url", "nats://nats:4222".into()),
-            ("aquila_nats_bucket", "flow_store".into()),
-            ("aquila_backend_url", "http://nginx:80".into()),
-            ("aquila_backend_token", "runtime".into()),
-            ("aquila_backend_unary_timeout_secs", 10.into()),
-            ("aquila_grpc_host", "0.0.0.0".into()),
-            ("aquila_grpc_port", 8081.into()),
-            ("aquila_grpc_health_service", false.into()),
-            ("aquila_grpc_connect_timeout_secs", 2.into()),
-            ("aquila_grpc_request_timeout_secs", 10.into()),
-            ("rest_action_port", 8084.into()),
-            ("aquila_action_rest_identifier", "rest-action".into()),
-            ("aquila_action_cron_identifier", "cron-action".into()),
-            ("action_image_registry", "ghcr.io/code0-tech/centaurus/ci-builds".into()),
             ("action_image_tag", "latest".into()),
+            ("aquila_backend_token", "runtime".into()),
             ("taurus_aquila_token", "taurus".into()),
             ("aquila_action_rest_token", "rest-action-token".into()),
             ("aquila_action_cron_token", "cron-action-token".into()),
-            ("velorum_host", "velorum".into()),
-            ("velorum_port", 50051.into()),
             ("velorum_jwt_secret", "secret".into()),
             ("sagittarius_db_encryption_primary_key", "primary-key".into()),
             ("sagittarius_db_encryption_deterministic_key", "deterministic-key".into()),
             ("sagittarius_db_encryption_key_derivation_salt", "salt".into()),
             ("sagittarius_rails_secret_key_base", "secret-key-base".into()),
             ("sagittarius_gateway_jwt_secret", "gateway-secret".into()),
-            ("sagittarius_gateway_jwt_ttl_seconds", 300.into()),
-            ("sagittarius_gateway_log_level", "info".into()),
-            ("opentelemetry_enabled", false.into()),
-            ("opentelemetry_grpc_host", "http://localhost:4317".into()),
-            ("opentelemetry_logs_http_endpoint", "http://localhost:4318/v1/logs".into()),
-            ("opentelemetry_metrics_http_endpoint", "http://localhost:4318/v1/metrics".into()),
-            ("opentelemetry_traces_http_endpoint", "http://localhost:4318/v1/traces".into()),
-            ("opentelemetry_logs_clientside_http_endpoint", "http://localhost:4318/v1/logs".into()),
-            ("opentelemetry_metrics_clientside_http_endpoint", "http://localhost:4318/v1/metrics".into()),
-            ("opentelemetry_traces_clientside_http_endpoint", "http://localhost:4318/v1/traces".into()),
-            ("opentelemetry_service_name_sagittarius_web", "sagittarius-web".into()),
-            ("opentelemetry_service_name_sagittarius_cable", "sagittarius-cable".into()),
-            ("opentelemetry_service_name_sagittarius_grpc", "sagittarius-grpc".into()),
-            ("opentelemetry_service_name_sagittarius_background", "sagittarius-background".into()),
-            ("opentelemetry_service_name_sagittarius_gateway", "sagittarius-gateway".into()),
-            ("opentelemetry_service_name_nginx", "nginx".into()),
-            ("opentelemetry_service_name_sculptor", "sculptor".into()),
-            ("opentelemetry_service_name_sculptor_clientside", "sculptor-clientside".into()),
-            ("sagittarius_rails_host", "sagittarius-rails-web".into()),
-            ("sagittarius_rails_port", 3000.into()),
-            ("sagittarius_cable_host", "sagittarius-rails-cable".into()),
-            ("sagittarius_cable_port", 3000.into()),
-            ("sagittarius_grpc_host", "sagittarius-grpc".into()),
-            ("sagittarius_grpc_port", 50051.into()),
-            ("sagittarius_gateway_host", "sagittarius-gateway".into()),
-            ("sagittarius_gateway_port", 50051.into()),
-            ("sagittarius_log_level", "info".into()),
-            ("sagittarius_rails_web_threads", 3.into()),
-            ("sagittarius_rails_grpc_threads", 6.into()),
-            ("sagittarius_db_pool_size", 8.into()),
-            ("sculptor_host", "sculptor".into()),
-            ("sculptor_port", 3000.into()),
         ];
 
         entries.into_iter().map(|(key, value)| (key.to_string(), value)).collect()
@@ -479,19 +409,33 @@ mod tests {
     #[test]
     fn renders_setup_templates() -> anyhow::Result<()> {
         let context = fixture_context();
+        let disk = BundleSource::Disk(PathBuf::from("bundle"));
+        let temp_dir = std::env::temp_dir().join(format!("hydra-setup-test-{}", std::process::id()));
+        fs::create_dir_all(&temp_dir)?;
 
-        for name in ["env.tera", "docker-compose.yml", "service.configuration.json.tera"] {
-            let raw = crate::embedded::template(name).expect("template should be embedded");
-            render_template(raw, &context)?;
-        }
+        let bundle = SetupBundle::load(&disk)?;
+        render_setup_templates(&disk, &bundle.templates, &context, &temp_dir)?;
 
+        let rendered_env = fs::read_to_string(temp_dir.join(".env"))?;
+        assert!(rendered_env.contains("INITIAL_ROOT_PASSWORD=root"));
+        assert!(rendered_env.contains("HOSTNAME=localhost"), "non-wizard values should keep reticulum's default");
+
+        fs::remove_dir_all(&temp_dir)?;
         Ok(())
     }
 
     #[test]
-    fn print_completion_links_reads_scheme_and_port_from_context() -> anyhow::Result<()> {
-        let context = fixture_context();
-        print_completion_links(&context)
+    fn print_completion_links_reads_scheme_and_port_from_env() -> anyhow::Result<()> {
+        let env: HashMap<String, String> = [
+            ("HOSTNAME".to_string(), "localhost".to_string()),
+            ("HTTP_PORT".to_string(), "80".to_string()),
+            ("HTTPS_PORT".to_string(), "443".to_string()),
+            ("SSL_ENABLED".to_string(), "false".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        print_completion_links(&env)
     }
 
     #[test]

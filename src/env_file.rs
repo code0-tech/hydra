@@ -19,10 +19,9 @@ pub fn read_value(path: impl AsRef<Path>, key: &str) -> anyhow::Result<Option<St
     Ok(read_all(path)?.remove(key))
 }
 
-/// Replaces (or appends) `KEY=value` lines in place, leaving every other
-/// line - comments, ordering, unrelated settings - untouched.
-pub fn set_values(path: impl AsRef<Path>, updates: &[(&str, &str)]) -> anyhow::Result<()> {
-    let contents = fs::read_to_string(&path)?;
+/// Replaces (or appends) `KEY=value` lines, leaving every other line -
+/// comments, ordering, unrelated settings - untouched.
+pub fn apply_values(contents: &str, updates: &[(&str, &str)]) -> String {
     let mut lines: Vec<String> = contents.lines().map(str::to_string).collect();
 
     for (key, value) in updates {
@@ -35,8 +34,13 @@ pub fn set_values(path: impl AsRef<Path>, updates: &[(&str, &str)]) -> anyhow::R
 
     let mut rendered = lines.join("\n");
     rendered.push('\n');
-    fs::write(path, rendered)?;
+    rendered
+}
 
+/// Replaces (or appends) `KEY=value` lines in an env file in place.
+pub fn set_values(path: impl AsRef<Path>, updates: &[(&str, &str)]) -> anyhow::Result<()> {
+    let contents = fs::read_to_string(&path)?;
+    fs::write(path, apply_values(&contents, updates))?;
     Ok(())
 }
 

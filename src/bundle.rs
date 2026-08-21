@@ -4,22 +4,45 @@ use rand::{Rng, distributions::Alphanumeric};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::embedded;
+/// The reticulum repo/branch/folder every bundle file (manifest + every
+/// template) is fetched from at runtime: reticulum is the canonical source
+/// for the actual compose stack, so `docker-compose.yml` there is never
+/// hand-copied, and the rest of the bundle lives alongside it in the same
+/// folder so it's one place to update, not several.
+const RETICULUM_REPO: &str = "code0-tech/reticulum";
+const RETICULUM_BRANCH: &str = "main";
+const RETICULUM_BUNDLE_PATH: &str = "docker-compose";
+
+/// Raw-content URL for a bundle file.
+fn raw_url(name: &str) -> String {
+    format!("https://raw.githubusercontent.com/{RETICULUM_REPO}/{RETICULUM_BRANCH}/{RETICULUM_BUNDLE_PATH}/{name}")
+}
+
+fn fetch_raw(name: &str) -> anyhow::Result<String> {
+    let url = raw_url(name);
+    ureq::get(&url)
+        .set("User-Agent", "codezero-cli")
+        .call()
+        .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}"))?
+        .into_string()
+        .map_err(|error| anyhow::anyhow!("Couldn't read {name}: {error}"))
+}
 
 /// Where the setup bundle (manifest + templates) is read from: a directory on
-/// disk when the user passes `--bundle` explicitly, or the copy baked into the
-/// binary otherwise - which is what makes an installed `codezero` work without
-/// this repo checked out nearby.
+/// disk when the user passes `--bundle` explicitly, or fetched live from
+/// reticulum/hydra otherwise - which is what makes an installed `codezero`
+/// work without either repo checked out nearby, and means bundle updates
+/// don't need a new `codezero` release.
 pub enum BundleSource {
     Disk(PathBuf),
-    Embedded,
+    Remote,
 }
 
 impl BundleSource {
     pub fn from_arg(path: Option<PathBuf>) -> Self {
         match path {
             Some(path) => BundleSource::Disk(path),
-            None => BundleSource::Embedded,
+            None => BundleSource::Remote,
         }
     }
 
@@ -30,7 +53,7 @@ impl BundleSource {
                 fs::read_to_string(&path)
                     .map_err(|error| anyhow::anyhow!("Couldn't read setup bundle manifest at {}: {error}", path.display()))
             }
-            BundleSource::Embedded => Ok(embedded::MANIFEST_JSON.to_string()),
+            BundleSource::Remote => fetch_raw("manifest.json"),
         }
     }
 
@@ -43,9 +66,7 @@ impl BundleSource {
                 fs::read_to_string(&path)
                     .map_err(|error| anyhow::anyhow!("Couldn't read template at {}: {error}", path.display()))
             }
-            BundleSource::Embedded => embedded::template(name)
-                .map(str::to_string)
-                .ok_or_else(|| anyhow::anyhow!("No embedded template named '{name}'")),
+            BundleSource::Remote => fetch_raw(name),
         }
     }
 }
@@ -226,34 +247,6 @@ mod tests {
         assert!(!bundle.steps.is_empty());
         assert!(!bundle.secrets.is_empty());
         assert_eq!(bundle.templates.len(), 3);
-        assert_eq!(
-            bundle.static_values.get("hostname"),
-            Some(&Value::String("localhost".into()))
-        );
-    }
-
-    #[test]
-    fn loads_the_embedded_manifest_identically_to_disk() {
-        let disk = SetupBundle::load(&BundleSource::Disk(PathBuf::from("bundle"))).expect("disk bundle should load");
-        let embedded = SetupBundle::load(&BundleSource::Embedded).expect("embedded bundle should load");
-
-        assert_eq!(disk.steps.len(), embedded.steps.len());
-        assert_eq!(disk.secrets.len(), embedded.secrets.len());
-        assert_eq!(disk.templates.len(), embedded.templates.len());
-    }
-
-    #[test]
-    fn embedded_template_matches_disk_for_every_mapping() {
-        let bundle = SetupBundle::load(&BundleSource::Disk(PathBuf::from("bundle"))).expect("bundle should load");
-        let disk = BundleSource::Disk(PathBuf::from("bundle"));
-
-        for mapping in &bundle.templates {
-            let from_disk = disk.template(&mapping.template).expect("disk template should read");
-            let from_embedded = BundleSource::Embedded
-                .template(&mapping.template)
-                .unwrap_or_else(|_| panic!("'{}' should be embedded", mapping.template));
-            assert_eq!(from_disk, from_embedded, "{} differs between disk and embedded", mapping.template);
-        }
     }
 
     #[test]

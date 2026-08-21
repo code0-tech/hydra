@@ -6,7 +6,6 @@ use clap::Subcommand;
 mod action;
 mod bundle;
 mod command;
-mod embedded;
 mod env_file;
 mod preflight;
 mod runner;
@@ -26,7 +25,7 @@ struct Cli {
 enum Commands {
     /// Set up CodeZero: answer a few quick questions and we'll get everything running for you.
     Setup {
-        /// Where to load the setup questions from (defaults to the bundle built into this binary)
+        /// Where to load the setup questions from (defaults to fetching the bundle live from reticulum/hydra)
         #[arg(long)]
         bundle: Option<PathBuf>,
         /// For CodeZero developers: skip the questions and grab the newest in-progress build automatically
@@ -41,7 +40,7 @@ enum Commands {
     Reset,
     /// Change your existing setup (admin account, profiles, image info, ...) without resetting.
     Configure {
-        /// Where to load the setup questions from (defaults to the bundle built into this binary)
+        /// Where to load the setup questions from (defaults to fetching the bundle live from reticulum/hydra)
         #[arg(long)]
         bundle: Option<PathBuf>,
     },
