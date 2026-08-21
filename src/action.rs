@@ -30,7 +30,19 @@ const RETICULUM_PROJECT: &str = "code0-tech%2Fdevelopment%2Freticulum";
 struct GitlabPipeline {
     id: u64,
     sha: String,
+    #[serde(rename = "ref")]
+    git_ref: String,
 }
+
+/// Pipelines that actually build+push images run under this ref prefix, not
+/// literally `main`: reticulum's own `main`-triggered pipelines are all
+/// `skipped` (its `.gitlab-ci.yml` `workflow: rules` only allow
+/// `api`/`pipeline`/`web`-sourced runs, so a plain push pipeline never runs).
+/// The real builds come from the GitHub Actions mirror
+/// (`code0-tech/reticulum`'s `ci.yml`) triggering GitLab's API via
+/// `Taucher2003/GitLab-Pipeline-Action`, which creates a synthetic
+/// `glpa/main/<sha>` ref per run rather than reusing `main`.
+const RETICULUM_DEV_REF_PREFIX: &str = "glpa/main/";
 
 /// Resolves the tag of the latest successful `main` build by asking GitLab's
 /// pipeline API directly, reconstructing the same
@@ -38,8 +50,11 @@ struct GitlabPipeline {
 /// for `RETICULUM_CONTAINER_VERSION`. Used only for `--dev` installs — regular
 /// installs stay fully local and never make a network call.
 pub fn resolve_dev_tag() -> anyhow::Result<String> {
+    // Can't filter server-side by ref prefix, and `main`-triggered and
+    // per-branch pipelines interleave in id order, so fetch a page and filter
+    // client-side for the first that's actually a `glpa/main/*` build.
     let url = format!(
-        "https://gitlab.com/api/v4/projects/{RETICULUM_PROJECT}/pipelines?ref=main&status=success&order_by=id&sort=desc&per_page=1"
+        "https://gitlab.com/api/v4/projects/{RETICULUM_PROJECT}/pipelines?status=success&order_by=id&sort=desc&per_page=20"
     );
 
     let pipelines: Vec<GitlabPipeline> = ureq::get(&url)
@@ -50,7 +65,7 @@ pub fn resolve_dev_tag() -> anyhow::Result<String> {
 
     let pipeline = pipelines
         .into_iter()
-        .next()
+        .find(|pipeline| pipeline.git_ref.starts_with(RETICULUM_DEV_REF_PREFIX))
         .ok_or_else(|| anyhow::anyhow!("No successful pipeline found on reticulum's main branch"))?;
 
     Ok(format!("0.0.0-experimental-{}-{}", pipeline.id, pipeline.sha))
