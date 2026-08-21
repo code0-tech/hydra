@@ -13,9 +13,15 @@ const RETICULUM_REPO: &str = "code0-tech/reticulum";
 const RETICULUM_BRANCH: &str = "main";
 const RETICULUM_BUNDLE_PATH: &str = "docker-compose";
 
+/// Env var override for `RETICULUM_BRANCH` - lets you test against an
+/// unmerged reticulum branch (e.g. one that hasn't landed on `main` yet)
+/// without a code change: `CODEZERO_RETICULUM_BRANCH=feat/cli-manifest codezero setup`.
+const RETICULUM_BRANCH_ENV_VAR: &str = "CODEZERO_RETICULUM_BRANCH";
+
 /// Raw-content URL for a bundle file.
 fn raw_url(name: &str) -> String {
-    format!("https://raw.githubusercontent.com/{RETICULUM_REPO}/{RETICULUM_BRANCH}/{RETICULUM_BUNDLE_PATH}/{name}")
+    let branch = std::env::var(RETICULUM_BRANCH_ENV_VAR).unwrap_or_else(|_| RETICULUM_BRANCH.to_string());
+    format!("https://raw.githubusercontent.com/{RETICULUM_REPO}/{branch}/{RETICULUM_BUNDLE_PATH}/{name}")
 }
 
 fn fetch_raw(name: &str) -> anyhow::Result<String> {
@@ -30,9 +36,9 @@ fn fetch_raw(name: &str) -> anyhow::Result<String> {
 
 /// Where the setup bundle (manifest + templates) is read from: a directory on
 /// disk when the user passes `--bundle` explicitly, or fetched live from
-/// reticulum/hydra otherwise - which is what makes an installed `codezero`
-/// work without either repo checked out nearby, and means bundle updates
-/// don't need a new `codezero` release.
+/// reticulum otherwise - which is what makes an installed `codezero` work
+/// without that repo checked out nearby, and means bundle updates don't need
+/// a new `codezero` release.
 pub enum BundleSource {
     Disk(PathBuf),
     Remote,

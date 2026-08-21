@@ -41,6 +41,8 @@ baked in. Both are fetched live at runtime (the wizard bundle from `reticulum`, 
 from `centaurus`), so it works from any directory without those repos checked out nearby, and
 updating either never requires a new `codezero` release. `--bundle`/`--index` still let you point
 at a directory on disk instead, useful when developing against an edited bundle.
+`CODEZERO_RETICULUM_BRANCH=<branch> codezero setup` fetches the bundle from a specific reticulum
+branch instead of `main` — useful for testing an unmerged reticulum change.
 
 ## Quick start
 
