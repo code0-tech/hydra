@@ -1,7 +1,10 @@
 use std::{fs, path::PathBuf};
 
 use crate::{
-    action::{ActionCatalog, SERVICE_CONFIGURATION_PATH, ServiceConfiguration, action_fragment_path, aquila_action_env_prefix},
+    action::{
+        ActionCatalog, SERVICE_CONFIGURATION_PATH, ServiceConfiguration, action_fragment_path,
+        aquila_action_env_prefix,
+    },
     env_file,
     runner::{Runner, default_runner, refresh_aquila_config},
     ui,
@@ -49,7 +52,10 @@ pub fn uninstall(index_path: Option<PathBuf>, name: String) -> anyhow::Result<()
     // config-generator turns into aquila's accepted-token list).
     let prefix = aquila_action_env_prefix(&entry.identifier);
     if fs::exists(ENV_PATH)? {
-        env_file::remove_keys(ENV_PATH, &[&format!("{prefix}_IDENTIFIER"), &format!("{prefix}_TOKEN")])?;
+        env_file::remove_keys(
+            ENV_PATH,
+            &[&format!("{prefix}_IDENTIFIER"), &format!("{prefix}_TOKEN")],
+        )?;
     }
 
     ui::success_line(&format!("Uninstalled {}.", entry.identifier));

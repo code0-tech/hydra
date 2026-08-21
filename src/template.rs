@@ -20,7 +20,10 @@ pub fn render_setup_templates(
         let raw = match source.template(&mapping.template) {
             Ok(raw) => raw,
             Err(error) if !mapping.required => {
-                ui::warn_line(&format!("Skipping optional '{}': {error}", mapping.template));
+                ui::warn_line(&format!(
+                    "Skipping optional '{}': {error}",
+                    mapping.template
+                ));
                 continue;
             }
             Err(error) => return Err(error),
@@ -52,7 +55,10 @@ fn patch_env(base: &str, context: &Map<String, Value>) -> String {
         .iter()
         .map(|(key, value)| (key.to_uppercase(), env_value_to_string(value)))
         .collect();
-    let updates: Vec<(&str, &str)> = updates.iter().map(|(key, value)| (key.as_str(), value.as_str())).collect();
+    let updates: Vec<(&str, &str)> = updates
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
 
     env_file::apply_values(base, &updates)
 }

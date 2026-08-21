@@ -20,8 +20,11 @@ const RETICULUM_BRANCH_ENV_VAR: &str = "CODEZERO_RETICULUM_BRANCH";
 
 /// Raw-content URL for a bundle file.
 fn raw_url(name: &str) -> String {
-    let branch = std::env::var(RETICULUM_BRANCH_ENV_VAR).unwrap_or_else(|_| RETICULUM_BRANCH.to_string());
-    format!("https://raw.githubusercontent.com/{RETICULUM_REPO}/{branch}/{RETICULUM_BUNDLE_PATH}/{name}")
+    let branch =
+        std::env::var(RETICULUM_BRANCH_ENV_VAR).unwrap_or_else(|_| RETICULUM_BRANCH.to_string());
+    format!(
+        "https://raw.githubusercontent.com/{RETICULUM_REPO}/{branch}/{RETICULUM_BUNDLE_PATH}/{name}"
+    )
 }
 
 fn fetch_raw(name: &str) -> anyhow::Result<String> {
@@ -56,8 +59,12 @@ impl BundleSource {
         match self {
             BundleSource::Disk(dir) => {
                 let path = dir.join("manifest.json");
-                fs::read_to_string(&path)
-                    .map_err(|error| anyhow::anyhow!("Couldn't read setup bundle manifest at {}: {error}", path.display()))
+                fs::read_to_string(&path).map_err(|error| {
+                    anyhow::anyhow!(
+                        "Couldn't read setup bundle manifest at {}: {error}",
+                        path.display()
+                    )
+                })
             }
             BundleSource::Remote => fetch_raw("manifest.json"),
         }
@@ -69,8 +76,9 @@ impl BundleSource {
         match self {
             BundleSource::Disk(dir) => {
                 let path = dir.join(name);
-                fs::read_to_string(&path)
-                    .map_err(|error| anyhow::anyhow!("Couldn't read template at {}: {error}", path.display()))
+                fs::read_to_string(&path).map_err(|error| {
+                    anyhow::anyhow!("Couldn't read template at {}: {error}", path.display())
+                })
             }
             BundleSource::Remote => fetch_raw(name),
         }
@@ -208,7 +216,10 @@ impl Step {
 /// Used both for interactive `Select` defaults and to auto-resolve a select
 /// step's value when a prompt is skipped entirely (e.g. `--dev`).
 pub fn default_choice(options: &[Choice]) -> Option<&Choice> {
-    options.iter().find(|choice| choice.default).or_else(|| options.first())
+    options
+        .iter()
+        .find(|choice| choice.default)
+        .or_else(|| options.first())
 }
 
 /// A random alphanumeric string suitable for use as a shared secret/token.
@@ -277,7 +288,8 @@ mod tests {
         )
         .unwrap();
 
-        let bundle = SetupBundle::load(&BundleSource::Disk(dir.clone())).expect("bundle should load");
+        let bundle =
+            SetupBundle::load(&BundleSource::Disk(dir.clone())).expect("bundle should load");
 
         assert_eq!(bundle.steps.len(), 1);
         assert_eq!(bundle.secrets.len(), 1);
@@ -305,8 +317,16 @@ mod tests {
     #[test]
     fn default_choice_prefers_the_flagged_option() {
         let options = vec![
-            Choice { label: "a".into(), value: Value::String("a".into()), default: false },
-            Choice { label: "b".into(), value: Value::String("b".into()), default: true },
+            Choice {
+                label: "a".into(),
+                value: Value::String("a".into()),
+                default: false,
+            },
+            Choice {
+                label: "b".into(),
+                value: Value::String("b".into()),
+                default: true,
+            },
         ];
 
         assert_eq!(default_choice(&options).unwrap().label, "b");
@@ -315,8 +335,16 @@ mod tests {
     #[test]
     fn default_choice_falls_back_to_first_option() {
         let options = vec![
-            Choice { label: "a".into(), value: Value::String("a".into()), default: false },
-            Choice { label: "b".into(), value: Value::String("b".into()), default: false },
+            Choice {
+                label: "a".into(),
+                value: Value::String("a".into()),
+                default: false,
+            },
+            Choice {
+                label: "b".into(),
+                value: Value::String("b".into()),
+                default: false,
+            },
         ];
 
         assert_eq!(default_choice(&options).unwrap().label, "a");

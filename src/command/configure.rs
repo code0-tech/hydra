@@ -31,7 +31,8 @@ pub fn configure(bundle_path: Option<PathBuf>) -> anyhow::Result<()> {
     // Same carry-forward as `setup`: the rendered service.configuration.json
     // starts fresh from what the bundle's template declares, so anything
     // `install`/`uninstall` added has to be reapplied after rendering.
-    let installed_actions = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
+    let installed_actions =
+        ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
 
     render_setup_templates(&source, &bundle.templates, &context, ".codezero")?;
     carry_forward_actions(installed_actions)?;

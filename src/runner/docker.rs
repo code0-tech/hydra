@@ -35,7 +35,11 @@ impl Default for DockerComposeRunner {
 /// `bundle/manifest.json`'s optional `docker-compose.override.yml` template),
 /// followed by every installed action's compose fragment (sorted for a
 /// stable, reproducible `-f` order).
-fn collect_compose_files(compose_file: &Path, override_compose_file: &Path, actions_dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+fn collect_compose_files(
+    compose_file: &Path,
+    override_compose_file: &Path,
+    actions_dir: &Path,
+) -> anyhow::Result<Vec<PathBuf>> {
     let mut files = vec![compose_file.to_path_buf()];
 
     if override_compose_file.is_file() {
@@ -95,7 +99,11 @@ fn parse_progress_line(line: &str) -> Option<(String, u64, u64)> {
 
 impl DockerComposeRunner {
     fn docker_compose(&self, args: &[&str]) -> anyhow::Result<Output> {
-        let compose_files = collect_compose_files(&self.compose_file, &self.override_compose_file, &self.actions_dir)?;
+        let compose_files = collect_compose_files(
+            &self.compose_file,
+            &self.override_compose_file,
+            &self.actions_dir,
+        )?;
 
         let mut command = Command::new("docker");
         command.args(["compose", "--env-file"]).arg(&self.env_file);
@@ -127,7 +135,11 @@ impl DockerComposeRunner {
     /// (rather than captured), so interactive/streaming output like
     /// `ps`'s table formatting or `logs --follow` behaves natively.
     fn docker_compose_interactive(&self, args: &[&str]) -> anyhow::Result<()> {
-        let compose_files = collect_compose_files(&self.compose_file, &self.override_compose_file, &self.actions_dir)?;
+        let compose_files = collect_compose_files(
+            &self.compose_file,
+            &self.override_compose_file,
+            &self.actions_dir,
+        )?;
 
         let mut command = Command::new("docker");
         command.args(["compose", "--env-file"]).arg(&self.env_file);
@@ -164,7 +176,11 @@ impl DockerComposeRunner {
     /// stdout/stderr already makes Compose fall back to non-interactive
     /// (plain-style) output on its own, since it detects there's no TTY.
     fn pull_with_progress(&self, label: &str, services: &[String]) -> anyhow::Result<()> {
-        let compose_files = collect_compose_files(&self.compose_file, &self.override_compose_file, &self.actions_dir)?;
+        let compose_files = collect_compose_files(
+            &self.compose_file,
+            &self.override_compose_file,
+            &self.actions_dir,
+        )?;
 
         let mut command = Command::new("docker");
         command.args(["compose", "--env-file"]).arg(&self.env_file);
@@ -385,7 +401,8 @@ mod tests {
 
     #[test]
     fn appends_sorted_action_fragments_after_the_main_compose_file() {
-        let dir = std::env::temp_dir().join(format!("hydra-compose-files-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("hydra-compose-files-test-{}", std::process::id()));
         let actions_dir = dir.join("actions");
         fs::create_dir_all(&actions_dir).unwrap();
         fs::write(actions_dir.join("shopware-action.yml"), "").unwrap();
@@ -394,7 +411,8 @@ mod tests {
 
         let compose_file = dir.join("docker-compose.yml");
         let override_compose_file = dir.join("docker-compose.override.yml");
-        let files = collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
+        let files =
+            collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
 
         assert_eq!(
             files,
@@ -414,14 +432,18 @@ mod tests {
         let override_compose_file = PathBuf::from(".codezero/does-not-exist.yml");
         let actions_dir = PathBuf::from(".codezero/does-not-exist");
 
-        let files = collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
+        let files =
+            collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
 
         assert_eq!(files, vec![compose_file]);
     }
 
     #[test]
     fn includes_the_override_file_when_it_exists_right_after_the_main_compose_file() {
-        let dir = std::env::temp_dir().join(format!("hydra-compose-override-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "hydra-compose-override-test-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).unwrap();
 
         let compose_file = dir.join("docker-compose.yml");
@@ -429,7 +451,8 @@ mod tests {
         fs::write(&override_compose_file, "").unwrap();
         let actions_dir = dir.join("does-not-exist");
 
-        let files = collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
+        let files =
+            collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
 
         assert_eq!(files, vec![compose_file, override_compose_file]);
 

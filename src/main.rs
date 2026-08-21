@@ -134,7 +134,11 @@ fn main() -> anyhow::Result<()> {
             PluginCommands::Unregister { identifier } => command::register::unregister(identifier),
         },
         Commands::Status => command::status::status(),
-        Commands::Logs { service, follow, tail } => command::logs::logs(service, follow, tail),
+        Commands::Logs {
+            service,
+            follow,
+            tail,
+        } => command::logs::logs(service, follow, tail),
         Commands::Upgrade {
             tag,
             registry,

@@ -27,7 +27,9 @@ pub fn check() -> anyhow::Result<()> {
     }
 
     if !succeeds(Command::new("docker").arg("info")) {
-        anyhow::bail!("Docker isn't running.\nStart Docker Desktop (or the Docker daemon) and try again.");
+        anyhow::bail!(
+            "Docker isn't running.\nStart Docker Desktop (or the Docker daemon) and try again."
+        );
     }
 
     Ok(())

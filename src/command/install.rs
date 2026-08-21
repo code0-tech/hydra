@@ -58,7 +58,10 @@ pub fn install(index_path: Option<PathBuf>, spec: String) -> anyhow::Result<()> 
     let token_key = format!("{prefix}_TOKEN");
     env_file::set_values(
         ENV_PATH,
-        &[(identifier_key.as_str(), entry.identifier.as_str()), (token_key.as_str(), token.as_str())],
+        &[
+            (identifier_key.as_str(), entry.identifier.as_str()),
+            (token_key.as_str(), token.as_str()),
+        ],
     )?;
 
     write_action_compose_fragment(entry, &tag, &token)?;
@@ -73,7 +76,10 @@ pub fn install(index_path: Option<PathBuf>, spec: String) -> anyhow::Result<()> 
     }
 
     let runner = default_runner();
-    match runner.start_service(&entry.identifier).and_then(|()| refresh_aquila_config(&runner)) {
+    match runner
+        .start_service(&entry.identifier)
+        .and_then(|()| refresh_aquila_config(&runner))
+    {
         Ok(()) => ui::success_line("Restarted Aquila to apply the new configuration."),
         Err(error) => ui::warn_line(&format!(
             "Couldn't apply the change automatically ({error}). Run `codezero start` to apply."
@@ -88,7 +94,11 @@ pub fn install(index_path: Option<PathBuf>, spec: String) -> anyhow::Result<()> 
 /// behind the `runtime` compose profile, rather than being something
 /// `install` creates a compose fragment for - so they're checked against
 /// `COMPOSE_PROFILES` instead of the installed-actions directory.
-fn check_dependencies(entry: &ActionEntry, catalog: &ActionCatalog, env: &HashMap<String, String>) -> anyhow::Result<()> {
+fn check_dependencies(
+    entry: &ActionEntry,
+    catalog: &ActionCatalog,
+    env: &HashMap<String, String>,
+) -> anyhow::Result<()> {
     let active_profiles: Vec<&str> = env
         .get("COMPOSE_PROFILES")
         .map(|value| value.split(',').collect())
@@ -117,7 +127,11 @@ fn check_dependencies(entry: &ActionEntry, catalog: &ActionCatalog, env: &HashMa
     Ok(())
 }
 
-fn write_action_compose_fragment(entry: &ActionEntry, tag: &str, token: &str) -> anyhow::Result<()> {
+fn write_action_compose_fragment(
+    entry: &ActionEntry,
+    tag: &str,
+    token: &str,
+) -> anyhow::Result<()> {
     fs::create_dir_all(ACTIONS_DIR)?;
 
     let docker = &entry.deployment.docker;

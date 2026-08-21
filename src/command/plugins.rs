@@ -62,7 +62,11 @@ fn border(widths: &[usize], left: &str, mid: &str, right: &str) -> String {
     let mut line = left.to_string();
     for (index, width) in widths.iter().enumerate() {
         line.push_str(&"─".repeat(width + 2));
-        line.push_str(if index + 1 == widths.len() { right } else { mid });
+        line.push_str(if index + 1 == widths.len() {
+            right
+        } else {
+            mid
+        });
     }
     line
 }
@@ -93,7 +97,12 @@ pub fn plugins(index_path: Option<PathBuf>) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let name_width = entries.iter().map(|entry| entry.name.len()).max().unwrap_or(0).max(4);
+    let name_width = entries
+        .iter()
+        .map(|entry| entry.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(4);
     let status_width = "installed".len();
     let requires_width = entries
         .iter()
@@ -153,13 +162,19 @@ pub fn plugins(index_path: Option<PathBuf>) -> anyhow::Result<()> {
 
         println!(
             "{}",
-            row(&[name, status, requires, description_lines[0].clone()], &widths)
+            row(
+                &[name, status, requires, description_lines[0].clone()],
+                &widths
+            )
         );
 
         for line in &description_lines[1..] {
             println!(
                 "{}",
-                row(&[String::new(), String::new(), String::new(), line.clone()], &widths)
+                row(
+                    &[String::new(), String::new(), String::new(), line.clone()],
+                    &widths
+                )
             );
         }
     }

@@ -5,8 +5,12 @@ use dialoguer::{Confirm, Input, MultiSelect, Password, Select, theme::ColorfulTh
 use serde_json::{Map, Value};
 
 use crate::{
-    action::{SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions, resolve_dev_tag},
-    bundle::{BundleSource, Choice, SetupBundle, Step, default_choice, generate_token, join_multiselect},
+    action::{
+        SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions, resolve_dev_tag,
+    },
+    bundle::{
+        BundleSource, Choice, SetupBundle, Step, default_choice, generate_token, join_multiselect,
+    },
     env_file,
     runner::{Runner, default_runner},
     template::render_setup_templates,
@@ -49,7 +53,9 @@ fn run_select(
 
     if allow_custom && selected == options.len() {
         let prompt = custom_prompt.as_deref().unwrap_or("Custom value");
-        let custom: String = Input::with_theme(theme).with_prompt(prompt).interact_text()?;
+        let custom: String = Input::with_theme(theme)
+            .with_prompt(prompt)
+            .interact_text()?;
         return Ok(Value::String(custom));
     }
 
@@ -91,7 +97,9 @@ fn seeded_default(seed: Option<&HashMap<String, String>>, id: &str) -> Option<St
 /// The option (if any) whose value matches a seeded string, e.g. matching
 /// `IMAGE_EDITION=ce` back to the "ce" choice so it's pre-selected.
 fn matching_option_index(options: &[Choice], value: &str) -> Option<usize> {
-    options.iter().position(|choice| display_value(&choice.value) == value)
+    options
+        .iter()
+        .position(|choice| display_value(&choice.value) == value)
 }
 
 /// Resolves every step's value in `--dev` mode without prompting: `image_tag`
@@ -114,8 +122,9 @@ fn auto_dev_value(step: &Step) -> anyhow::Result<Value> {
             .map(Value::String)
             .ok_or_else(|| anyhow::anyhow!("'{}' has no default for --dev", step.id())),
         Step::Select { options, .. } => {
-            let choice = default_choice(options)
-                .ok_or_else(|| anyhow::anyhow!("'{}' step has no options to default to", step.id()))?;
+            let choice = default_choice(options).ok_or_else(|| {
+                anyhow::anyhow!("'{}' step has no options to default to", step.id())
+            })?;
             Ok(choice.value.clone())
         }
         Step::Multiselect { options, join, .. } => {
@@ -148,9 +157,15 @@ pub(crate) fn run_wizard(
     seed: Option<&HashMap<String, String>>,
 ) -> anyhow::Result<Map<String, Value>> {
     if seed.is_some() {
-        print_banner("Reconfigure", "Update your existing .codezero configuration, then apply it.");
+        print_banner(
+            "Reconfigure",
+            "Update your existing .codezero configuration, then apply it.",
+        );
     } else {
-        print_banner("Interactive setup", "Create a local .codezero runtime configuration, then start it.");
+        print_banner(
+            "Interactive setup",
+            "Create a local .codezero runtime configuration, then start it.",
+        );
     }
 
     let sections: Vec<&str> = {
@@ -223,7 +238,11 @@ pub(crate) fn run_wizard(
                 // dialoguer's password prompt has no notion of a displayed
                 // default, so "leave blank to keep current" is handled here
                 // instead: an empty answer falls back to the seeded value.
-                let value = if typed.is_empty() { seeded.unwrap_or(typed) } else { typed };
+                let value = if typed.is_empty() {
+                    seeded.unwrap_or(typed)
+                } else {
+                    typed
+                };
                 (id.clone(), Value::String(value))
             }
             Step::Select {
@@ -238,7 +257,14 @@ pub(crate) fn run_wizard(
                     .and_then(|value| matching_option_index(options, &value))
                     .or_else(|| options.iter().position(|choice| choice.default))
                     .unwrap_or(0);
-                let value = run_select(theme, prompt, options, *allow_custom, custom_prompt, default_index)?;
+                let value = run_select(
+                    theme,
+                    prompt,
+                    options,
+                    *allow_custom,
+                    custom_prompt,
+                    default_index,
+                )?;
                 (id.clone(), value)
             }
             Step::Multiselect {
@@ -318,7 +344,8 @@ pub fn setup(bundle_path: Option<PathBuf>, dev: bool) -> anyhow::Result<()> {
     // also the file `codezero install`/`uninstall` maintain — regenerating it
     // from scratch would silently wipe out any installed actions. Carry them
     // forward across the fresh render (see `carry_forward_actions`).
-    let installed_actions = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
+    let installed_actions =
+        ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
 
     fs::create_dir_all(".codezero")?;
     render_setup_templates(&source, &bundle.templates, &context, ".codezero")?;
@@ -342,7 +369,11 @@ pub fn setup(bundle_path: Option<PathBuf>, dev: bool) -> anyhow::Result<()> {
 fn print_completion_links(env: &HashMap<String, String>) -> anyhow::Result<()> {
     let ssl_enabled = env.get("SSL_ENABLED").map(String::as_str) == Some("true");
     let scheme = if ssl_enabled { "https" } else { "http" };
-    let port_key = if ssl_enabled { "HTTPS_PORT" } else { "HTTP_PORT" };
+    let port_key = if ssl_enabled {
+        "HTTPS_PORT"
+    } else {
+        "HTTP_PORT"
+    };
     let port = env
         .get(port_key)
         .ok_or_else(|| anyhow::anyhow!("{ENV_PATH} is missing {port_key}"))?;
@@ -353,7 +384,11 @@ fn print_completion_links(env: &HashMap<String, String>) -> anyhow::Result<()> {
 
     println!();
     ui::success_line("CodeZero is ready.");
-    println!("  {} {}", style("Open:").bold(), ui::accent().apply_to(app_url));
+    println!(
+        "  {} {}",
+        style("Open:").bold(),
+        ui::accent().apply_to(app_url)
+    );
     println!(
         "  {} {}",
         style("Docs:").bold(),
@@ -383,7 +418,10 @@ mod tests {
             ("initial_root_password", "root".into()),
             ("initial_runtime_token", "runtime".into()),
             ("compose_profiles", "ide,runtime".into()),
-            ("image_registry", "ghcr.io/code0-tech/reticulum/ci-builds".into()),
+            (
+                "image_registry",
+                "ghcr.io/code0-tech/reticulum/ci-builds".into(),
+            ),
             ("image_tag", "latest".into()),
             ("image_edition", "ce".into()),
             ("action_image_tag", "latest".into()),
@@ -392,21 +430,37 @@ mod tests {
             ("aquila_action_rest_token", "rest-action-token".into()),
             ("aquila_action_cron_token", "cron-action-token".into()),
             ("velorum_jwt_secret", "secret".into()),
-            ("sagittarius_db_encryption_primary_key", "primary-key".into()),
-            ("sagittarius_db_encryption_deterministic_key", "deterministic-key".into()),
-            ("sagittarius_db_encryption_key_derivation_salt", "salt".into()),
-            ("sagittarius_rails_secret_key_base", "secret-key-base".into()),
+            (
+                "sagittarius_db_encryption_primary_key",
+                "primary-key".into(),
+            ),
+            (
+                "sagittarius_db_encryption_deterministic_key",
+                "deterministic-key".into(),
+            ),
+            (
+                "sagittarius_db_encryption_key_derivation_salt",
+                "salt".into(),
+            ),
+            (
+                "sagittarius_rails_secret_key_base",
+                "secret-key-base".into(),
+            ),
             ("sagittarius_gateway_jwt_secret", "gateway-secret".into()),
         ];
 
-        entries.into_iter().map(|(key, value)| (key.to_string(), value)).collect()
+        entries
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value))
+            .collect()
     }
 
     #[test]
     fn renders_setup_templates() -> anyhow::Result<()> {
         let context = fixture_context();
 
-        let source_dir = std::env::temp_dir().join(format!("hydra-setup-test-source-{}", std::process::id()));
+        let source_dir =
+            std::env::temp_dir().join(format!("hydra-setup-test-source-{}", std::process::id()));
         fs::create_dir_all(&source_dir)?;
         fs::write(
             source_dir.join(".env"),
@@ -423,7 +477,11 @@ mod tests {
         let disk = BundleSource::Disk(source_dir.clone());
 
         let mappings = vec![
-            TemplateMapping { template: ".env".into(), output: ".env".into(), required: true },
+            TemplateMapping {
+                template: ".env".into(),
+                output: ".env".into(),
+                required: true,
+            },
             TemplateMapping {
                 template: "docker-compose.yml".into(),
                 output: "docker-compose.yml".into(),
@@ -436,16 +494,27 @@ mod tests {
             },
         ];
 
-        let output_dir = std::env::temp_dir().join(format!("hydra-setup-test-output-{}", std::process::id()));
+        let output_dir =
+            std::env::temp_dir().join(format!("hydra-setup-test-output-{}", std::process::id()));
         fs::create_dir_all(&output_dir)?;
         render_setup_templates(&disk, &mappings, &context, &output_dir)?;
 
         let rendered_env = fs::read_to_string(output_dir.join(".env"))?;
-        assert!(rendered_env.contains("INITIAL_ROOT_PASSWORD=root"), "wizard value should overwrite the base");
-        assert!(rendered_env.contains("HOSTNAME=localhost"), "non-wizard values should keep reticulum's default");
-        assert!(rendered_env.contains("AQUILA_LOG_LEVEL=info"), "untouched settings should pass through unchanged");
+        assert!(
+            rendered_env.contains("INITIAL_ROOT_PASSWORD=root"),
+            "wizard value should overwrite the base"
+        );
+        assert!(
+            rendered_env.contains("HOSTNAME=localhost"),
+            "non-wizard values should keep reticulum's default"
+        );
+        assert!(
+            rendered_env.contains("AQUILA_LOG_LEVEL=info"),
+            "untouched settings should pass through unchanged"
+        );
 
-        let rendered_service_config = fs::read_to_string(output_dir.join("service.configuration.json"))?;
+        let rendered_service_config =
+            fs::read_to_string(output_dir.join("service.configuration.json"))?;
         assert!(rendered_service_config.contains("\"token\": \"taurus\""));
 
         fs::remove_dir_all(&source_dir)?;
@@ -474,8 +543,16 @@ mod tests {
             section: "Runtime artifacts".into(),
             prompt: "Choose artifact registry".into(),
             options: vec![
-                Choice { label: "github".into(), value: Value::String("ghcr.io/code0-tech/reticulum/ci-builds".into()), default: false },
-                Choice { label: "gitlab".into(), value: Value::String("registry.gitlab.com/code0-tech/packages".into()), default: false },
+                Choice {
+                    label: "github".into(),
+                    value: Value::String("ghcr.io/code0-tech/reticulum/ci-builds".into()),
+                    default: false,
+                },
+                Choice {
+                    label: "gitlab".into(),
+                    value: Value::String("registry.gitlab.com/code0-tech/packages".into()),
+                    default: false,
+                },
             ],
             allow_custom: true,
             custom_prompt: Some("Custom image registry".into()),
@@ -531,9 +608,21 @@ mod tests {
             section: "Runtime profiles".into(),
             prompt: "Choose profiles".into(),
             options: vec![
-                Choice { label: "ide".into(), value: Value::String("ide".into()), default: true },
-                Choice { label: "runtime".into(), value: Value::String("runtime".into()), default: true },
-                Choice { label: "ai".into(), value: Value::String("ide_velorum".into()), default: false },
+                Choice {
+                    label: "ide".into(),
+                    value: Value::String("ide".into()),
+                    default: true,
+                },
+                Choice {
+                    label: "runtime".into(),
+                    value: Value::String("runtime".into()),
+                    default: true,
+                },
+                Choice {
+                    label: "ai".into(),
+                    value: Value::String("ide_velorum".into()),
+                    default: false,
+                },
             ],
             join: Some(",".into()),
         };

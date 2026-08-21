@@ -17,7 +17,12 @@ const ENV_PATH: &str = ".codezero/.env";
 /// version string. This edits only the image-related keys in the existing
 /// `.env` and lets `docker compose up -d` recreate whichever services
 /// actually changed.
-pub fn upgrade(tag: Option<String>, registry: Option<String>, edition: Option<String>, dev: bool) -> anyhow::Result<()> {
+pub fn upgrade(
+    tag: Option<String>,
+    registry: Option<String>,
+    edition: Option<String>,
+    dev: bool,
+) -> anyhow::Result<()> {
     if !fs::exists(ENV_PATH)? {
         anyhow::bail!("No CodeZero setup found. Run `codezero setup` first.");
     }

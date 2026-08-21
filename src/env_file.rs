@@ -65,20 +65,29 @@ mod tests {
 
     #[test]
     fn replaces_an_existing_key_in_place_and_leaves_others_untouched() {
-        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-a.env", std::process::id()));
-        fs::write(&path, "HOSTNAME=localhost\nIMAGE_TAG=old\nSSL_ENABLED=false\n").unwrap();
+        let path =
+            std::env::temp_dir().join(format!("hydra-env-file-test-{}-a.env", std::process::id()));
+        fs::write(
+            &path,
+            "HOSTNAME=localhost\nIMAGE_TAG=old\nSSL_ENABLED=false\n",
+        )
+        .unwrap();
 
         set_values(&path, &[("IMAGE_TAG", "new")]).unwrap();
 
         let contents = fs::read_to_string(&path).unwrap();
-        assert_eq!(contents, "HOSTNAME=localhost\nIMAGE_TAG=new\nSSL_ENABLED=false\n");
+        assert_eq!(
+            contents,
+            "HOSTNAME=localhost\nIMAGE_TAG=new\nSSL_ENABLED=false\n"
+        );
 
         fs::remove_file(&path).unwrap();
     }
 
     #[test]
     fn appends_the_key_when_it_is_missing() {
-        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-b.env", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("hydra-env-file-test-{}-b.env", std::process::id()));
         fs::write(&path, "HOSTNAME=localhost\n").unwrap();
 
         set_values(&path, &[("IMAGE_TAG", "new")]).unwrap();
@@ -91,7 +100,8 @@ mod tests {
 
     #[test]
     fn reads_an_existing_value() {
-        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-c.env", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("hydra-env-file-test-{}-c.env", std::process::id()));
         fs::write(&path, "HOSTNAME=localhost\nIMAGE_TAG=abc123\n").unwrap();
 
         let value = read_value(&path, "IMAGE_TAG").unwrap();
@@ -102,7 +112,8 @@ mod tests {
 
     #[test]
     fn reads_none_for_a_missing_key() {
-        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-d.env", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("hydra-env-file-test-{}-d.env", std::process::id()));
         fs::write(&path, "HOSTNAME=localhost\n").unwrap();
 
         let value = read_value(&path, "IMAGE_TAG").unwrap();
@@ -113,10 +124,15 @@ mod tests {
 
     #[test]
     fn removes_matching_keys_and_leaves_others_untouched() {
-        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-f.env", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("hydra-env-file-test-{}-f.env", std::process::id()));
         fs::write(&path, "HOSTNAME=localhost\nAQUILA_ACTION_GLS_IDENTIFIER=gls-action\nAQUILA_ACTION_GLS_TOKEN=secret\n").unwrap();
 
-        remove_keys(&path, &["AQUILA_ACTION_GLS_IDENTIFIER", "AQUILA_ACTION_GLS_TOKEN"]).unwrap();
+        remove_keys(
+            &path,
+            &["AQUILA_ACTION_GLS_IDENTIFIER", "AQUILA_ACTION_GLS_TOKEN"],
+        )
+        .unwrap();
 
         let contents = fs::read_to_string(&path).unwrap();
         assert_eq!(contents, "HOSTNAME=localhost\n");
@@ -126,8 +142,13 @@ mod tests {
 
     #[test]
     fn read_all_skips_comments_and_blank_lines() {
-        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-e.env", std::process::id()));
-        fs::write(&path, "# a comment\n\nHOSTNAME=localhost\n  \nIMAGE_TAG=abc\n").unwrap();
+        let path =
+            std::env::temp_dir().join(format!("hydra-env-file-test-{}-e.env", std::process::id()));
+        fs::write(
+            &path,
+            "# a comment\n\nHOSTNAME=localhost\n  \nIMAGE_TAG=abc\n",
+        )
+        .unwrap();
 
         let map = read_all(&path).unwrap();
 

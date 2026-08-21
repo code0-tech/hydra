@@ -30,7 +30,11 @@ pub fn register(identifier: String) -> anyhow::Result<()> {
     match refresh_aquila_config(&default_runner()) {
         Ok(()) => ui::success_line(&format!(
             "{} '{identifier}' with Aquila.",
-            if updated { "Re-registered" } else { "Registered" }
+            if updated {
+                "Re-registered"
+            } else {
+                "Registered"
+            }
         )),
         Err(error) => ui::warn_line(&format!(
             "Couldn't apply the change automatically ({error}). Run `codezero start` to apply."
@@ -40,11 +44,15 @@ pub fn register(identifier: String) -> anyhow::Result<()> {
     // Aquila's gRPC port is published to the host (see `docker-compose.yml`'s
     // `ports: - "${AQUILA_GRPC_PORT}:8081"`), so a locally-running action
     // reaches it via localhost, not the in-network `aquila` hostname.
-    let port = env_file::read_value(ENV_PATH, "AQUILA_GRPC_PORT")?.unwrap_or_else(|| "8081".to_string());
+    let port =
+        env_file::read_value(ENV_PATH, "AQUILA_GRPC_PORT")?.unwrap_or_else(|| "8081".to_string());
 
     println!();
     ui::muted_line("Point your locally-running action at:");
-    println!("  AQUILA_URL={}", ui::accent().apply_to(format!("localhost:{port}")));
+    println!(
+        "  AQUILA_URL={}",
+        ui::accent().apply_to(format!("localhost:{port}"))
+    );
     println!("  AUTH_TOKEN={}", ui::accent().apply_to(&token));
 
     Ok(())

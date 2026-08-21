@@ -88,9 +88,14 @@ pub fn resolve_dev_tag() -> anyhow::Result<String> {
     let pipeline = pipelines
         .into_iter()
         .find(|pipeline| pipeline.git_ref.starts_with(RETICULUM_DEV_REF_PREFIX))
-        .ok_or_else(|| anyhow::anyhow!("No successful pipeline found on reticulum's main branch"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("No successful pipeline found on reticulum's main branch")
+        })?;
 
-    Ok(format!("0.0.0-experimental-{}-{}", pipeline.id, pipeline.sha))
+    Ok(format!(
+        "0.0.0-experimental-{}-{}",
+        pipeline.id, pipeline.sha
+    ))
 }
 
 fn default_aquila_url_var() -> String {
@@ -152,7 +157,8 @@ struct GitTreeEntry {
 /// limit) rather than through the contents API.
 fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
     let branch = catalog_branch();
-    let tree_url = format!("https://api.github.com/repos/{CATALOG_REPO}/git/trees/{branch}?recursive=1");
+    let tree_url =
+        format!("https://api.github.com/repos/{CATALOG_REPO}/git/trees/{branch}?recursive=1");
 
     let tree: GitTree = ureq::get(&tree_url)
         .set("User-Agent", "codezero-cli")
@@ -164,7 +170,11 @@ fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
     let manifest_paths: Vec<&str> = tree
         .tree
         .iter()
-        .filter(|entry| entry.kind == "blob" && entry.path.starts_with("actions/") && entry.path.ends_with("/manifest.json"))
+        .filter(|entry| {
+            entry.kind == "blob"
+                && entry.path.starts_with("actions/")
+                && entry.path.ends_with("/manifest.json")
+        })
         .map(|entry| entry.path.as_str())
         .collect();
 
@@ -188,10 +198,18 @@ impl ActionCatalog {
     pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
         match path {
             Some(path) => {
-                let data = fs::read_to_string(path)
-                    .map_err(|error| anyhow::anyhow!("Couldn't read action catalog at {}: {error}", path.display()))?;
-                serde_json::from_str(&data)
-                    .map_err(|error| anyhow::anyhow!("Couldn't parse action catalog at {}: {error}", path.display()))
+                let data = fs::read_to_string(path).map_err(|error| {
+                    anyhow::anyhow!(
+                        "Couldn't read action catalog at {}: {error}",
+                        path.display()
+                    )
+                })?;
+                serde_json::from_str(&data).map_err(|error| {
+                    anyhow::anyhow!(
+                        "Couldn't parse action catalog at {}: {error}",
+                        path.display()
+                    )
+                })
             }
             None => fetch_remote_catalog(),
         }
@@ -209,7 +227,10 @@ impl ActionCatalog {
     }
 
     pub fn names(&self) -> Vec<&str> {
-        self.actions.iter().map(|action| action.name.as_str()).collect()
+        self.actions
+            .iter()
+            .map(|action| action.name.as_str())
+            .collect()
     }
 }
 
@@ -255,11 +276,17 @@ impl ServiceConfiguration {
         }
 
         let data = fs::read_to_string(path).map_err(|error| {
-            anyhow::anyhow!("Couldn't read service configuration at {}: {error}", path.display())
+            anyhow::anyhow!(
+                "Couldn't read service configuration at {}: {error}",
+                path.display()
+            )
         })?;
 
         let config: ServiceConfiguration = serde_json::from_str(&data).map_err(|error| {
-            anyhow::anyhow!("Couldn't parse service configuration at {}: {error}", path.display())
+            anyhow::anyhow!(
+                "Couldn't parse service configuration at {}: {error}",
+                path.display()
+            )
         })?;
 
         Ok(config)
@@ -298,7 +325,8 @@ impl ServiceConfiguration {
     /// was actually removed.
     pub fn remove_action(&mut self, identifier: &str) -> bool {
         let before = self.actions.len();
-        self.actions.retain(|action| action.identifier != identifier);
+        self.actions
+            .retain(|action| action.identifier != identifier);
         self.actions.len() != before
     }
 }
@@ -310,7 +338,10 @@ impl ServiceConfiguration {
 /// this only adds back what the CLI itself is responsible for, via
 /// `upsert_action` (merge), never wholesale replacing `.actions` and losing
 /// what the template just rendered.
-pub fn carry_forward_actions_at(path: impl AsRef<Path>, previously_installed: Vec<ActionConfig>) -> anyhow::Result<()> {
+pub fn carry_forward_actions_at(
+    path: impl AsRef<Path>,
+    previously_installed: Vec<ActionConfig>,
+) -> anyhow::Result<()> {
     let mut config = ServiceConfiguration::load_or_default(&path)?;
 
     for action in previously_installed {
@@ -330,7 +361,10 @@ mod tests {
 
     #[test]
     fn loads_a_catalog_from_disk() {
-        let path = std::env::temp_dir().join(format!("hydra-action-catalog-test-{}.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hydra-action-catalog-test-{}.json",
+            std::process::id()
+        ));
         fs::write(
             &path,
             r#"{
@@ -356,7 +390,9 @@ mod tests {
         assert_eq!(gls.deployment.docker.auth_token_var, "AUTH_TOKEN");
         assert_eq!(gls.dependencies, vec!["rest-action"]);
 
-        let by_identifier = catalog.find("gls-action").expect("gls should also be findable by identifier");
+        let by_identifier = catalog
+            .find("gls-action")
+            .expect("gls should also be findable by identifier");
         assert_eq!(by_identifier.name, "gls");
 
         fs::remove_file(&path).unwrap();
@@ -364,7 +400,10 @@ mod tests {
 
     #[test]
     fn finds_an_action_by_identifier_with_the_action_suffix_stripped() {
-        let path = std::env::temp_dir().join(format!("hydra-action-catalog-test-{}-suffix.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hydra-action-catalog-test-{}-suffix.json",
+            std::process::id()
+        ));
         fs::write(
             &path,
             r#"{
@@ -380,7 +419,9 @@ mod tests {
         .unwrap();
 
         let catalog = ActionCatalog::load(Some(&path)).expect("catalog should load");
-        let entry = catalog.find("shopify").expect("shopify should resolve via the stripped identifier");
+        let entry = catalog
+            .find("shopify")
+            .expect("shopify should resolve via the stripped identifier");
         assert_eq!(entry.identifier, "shopify-action");
 
         fs::remove_file(&path).unwrap();
@@ -388,7 +429,10 @@ mod tests {
 
     #[test]
     fn unknown_action_is_not_found() {
-        let path = std::env::temp_dir().join(format!("hydra-action-catalog-test-{}-empty.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hydra-action-catalog-test-{}-empty.json",
+            std::process::id()
+        ));
         fs::write(&path, r#"{"actions": []}"#).unwrap();
 
         let catalog = ActionCatalog::load(Some(&path)).expect("catalog should load");
@@ -468,7 +512,10 @@ mod tests {
     #[test]
     fn aquila_action_env_prefix_strips_the_action_suffix_and_uppercases() {
         assert_eq!(aquila_action_env_prefix("gls-action"), "AQUILA_ACTION_GLS");
-        assert_eq!(aquila_action_env_prefix("rest-action"), "AQUILA_ACTION_REST");
+        assert_eq!(
+            aquila_action_env_prefix("rest-action"),
+            "AQUILA_ACTION_REST"
+        );
     }
 
     #[test]
@@ -481,7 +528,10 @@ mod tests {
 
     #[test]
     fn carry_forward_actions_merges_onto_whatever_the_template_just_rendered() {
-        let path = std::env::temp_dir().join(format!("hydra-carry-forward-test-{}.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hydra-carry-forward-test-{}.json",
+            std::process::id()
+        ));
 
         // Simulates a fresh template render: the bundle's own built-in
         // actions (e.g. rest-action/cron-action) are already present.
@@ -505,15 +555,28 @@ mod tests {
 
         let result = ServiceConfiguration::load_or_default(&path).unwrap();
         assert_eq!(result.actions.len(), 2);
-        assert!(result.actions.iter().any(|a| a.identifier == "rest-action" && a.token == "rest-token"));
-        assert!(result.actions.iter().any(|a| a.identifier == "gls-action" && a.token == "gls-token"));
+        assert!(
+            result
+                .actions
+                .iter()
+                .any(|a| a.identifier == "rest-action" && a.token == "rest-token")
+        );
+        assert!(
+            result
+                .actions
+                .iter()
+                .any(|a| a.identifier == "gls-action" && a.token == "gls-token")
+        );
 
         fs::remove_file(&path).unwrap();
     }
 
     #[test]
     fn carry_forward_actions_updates_an_existing_entrys_token() {
-        let path = std::env::temp_dir().join(format!("hydra-carry-forward-test-{}-update.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hydra-carry-forward-test-{}-update.json",
+            std::process::id()
+        ));
 
         let rendered = ServiceConfiguration {
             actions: vec![ActionConfig {
