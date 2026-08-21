@@ -81,8 +81,9 @@ done it prints the URL CodeZero is running at.
   (ports, hosts, log levels, ...) keeps whatever default reticulum already ships, so `manifest.json`
   never has to duplicate them. Every value `docker-compose.yml` needs that varies per install is a
   `${VAR}` reference Docker Compose resolves from the resulting `.codezero/.env` at runtime.
-- `bundle/` in this repo is a local fixture, not what ships — use `--bundle bundle/` to iterate on
-  template changes offline before copying them over to reticulum.
+- This repo has no local copy of the bundle — `--bundle <path>` points at any directory on disk with
+  the same layout (e.g. a local `reticulum` checkout's `docker-compose/` folder) for developing
+  against an edited bundle without a network round-trip.
 - Installed actions each get their own compose fragment under `.codezero/actions/`, merged on top of
   the base stack via `docker compose -f base.yml -f actions/*.yml`.
 

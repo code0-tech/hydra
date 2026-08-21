@@ -376,6 +376,7 @@ fn print_completion_links(env: &HashMap<String, String>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bundle::TemplateMapping;
 
     /// Every value the wizard itself actually produces (steps + secrets) -
     /// everything else `docker-compose.yml`/`.env` need is a default already
@@ -409,18 +410,46 @@ mod tests {
     #[test]
     fn renders_setup_templates() -> anyhow::Result<()> {
         let context = fixture_context();
-        let disk = BundleSource::Disk(PathBuf::from("bundle"));
-        let temp_dir = std::env::temp_dir().join(format!("hydra-setup-test-{}", std::process::id()));
-        fs::create_dir_all(&temp_dir)?;
 
-        let bundle = SetupBundle::load(&disk)?;
-        render_setup_templates(&disk, &bundle.templates, &context, &temp_dir)?;
+        let source_dir = std::env::temp_dir().join(format!("hydra-setup-test-source-{}", std::process::id()));
+        fs::create_dir_all(&source_dir)?;
+        fs::write(
+            source_dir.join(".env"),
+            "HOSTNAME=localhost\nINITIAL_ROOT_PASSWORD=changeme\nAQUILA_LOG_LEVEL=info\n",
+        )?;
+        fs::write(
+            source_dir.join("docker-compose.yml"),
+            "services:\n  postgres:\n    image: postgres:18.3\n",
+        )?;
+        fs::write(
+            source_dir.join("service.configuration.json.tera"),
+            r#"{ "runtimes": [{ "identifier": "taurus", "token": "{{ taurus_aquila_token }}" }] }"#,
+        )?;
+        let disk = BundleSource::Disk(source_dir.clone());
 
-        let rendered_env = fs::read_to_string(temp_dir.join(".env"))?;
-        assert!(rendered_env.contains("INITIAL_ROOT_PASSWORD=root"));
+        let mappings = vec![
+            TemplateMapping { template: ".env".into(), output: ".env".into() },
+            TemplateMapping { template: "docker-compose.yml".into(), output: "docker-compose.yml".into() },
+            TemplateMapping {
+                template: "service.configuration.json.tera".into(),
+                output: "service.configuration.json".into(),
+            },
+        ];
+
+        let output_dir = std::env::temp_dir().join(format!("hydra-setup-test-output-{}", std::process::id()));
+        fs::create_dir_all(&output_dir)?;
+        render_setup_templates(&disk, &mappings, &context, &output_dir)?;
+
+        let rendered_env = fs::read_to_string(output_dir.join(".env"))?;
+        assert!(rendered_env.contains("INITIAL_ROOT_PASSWORD=root"), "wizard value should overwrite the base");
         assert!(rendered_env.contains("HOSTNAME=localhost"), "non-wizard values should keep reticulum's default");
+        assert!(rendered_env.contains("AQUILA_LOG_LEVEL=info"), "untouched settings should pass through unchanged");
 
-        fs::remove_dir_all(&temp_dir)?;
+        let rendered_service_config = fs::read_to_string(output_dir.join("service.configuration.json"))?;
+        assert!(rendered_service_config.contains("\"token\": \"taurus\""));
+
+        fs::remove_dir_all(&source_dir)?;
+        fs::remove_dir_all(&output_dir)?;
         Ok(())
     }
 

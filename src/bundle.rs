@@ -241,12 +241,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_the_bundled_manifest() {
-        let bundle = SetupBundle::load(&BundleSource::Disk(PathBuf::from("bundle"))).expect("bundle should load");
+    fn loads_a_manifest_from_disk() {
+        let dir = std::env::temp_dir().join(format!("hydra-bundle-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            r#"{
+                "version": "0.1.0",
+                "steps": [
+                    { "id": "hostname", "type": "input", "section": "Network", "prompt": "Hostname", "default": "localhost" }
+                ],
+                "secrets": [
+                    { "id": "token", "label": "Token" }
+                ],
+                "templates": [
+                    { "template": ".env", "output": ".env" }
+                ]
+            }"#,
+        )
+        .unwrap();
 
-        assert!(!bundle.steps.is_empty());
-        assert!(!bundle.secrets.is_empty());
-        assert_eq!(bundle.templates.len(), 3);
+        let bundle = SetupBundle::load(&BundleSource::Disk(dir.clone())).expect("bundle should load");
+
+        assert_eq!(bundle.steps.len(), 1);
+        assert_eq!(bundle.secrets.len(), 1);
+        assert_eq!(bundle.templates.len(), 1);
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
