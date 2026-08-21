@@ -12,10 +12,18 @@ pub const ACTIONS_DIR: &str = ".codezero/actions";
 /// The centaurus repo/branch the action catalog is fetched from: one
 /// `actions/<name>/manifest.json` per action, rather than a single
 /// hand-maintained index file, so adding or updating an action doesn't
-/// require a hydra release. `feat/action-manifest` until these manifests
-/// land on `main`.
+/// require a hydra release.
 const CATALOG_REPO: &str = "code0-tech/centaurus";
-const CATALOG_BRANCH: &str = "feat/action-manifest";
+const CATALOG_BRANCH: &str = "main";
+
+/// Env var override for `CATALOG_BRANCH` - lets you test against an unmerged
+/// centaurus branch without a code change, same as `CODEZERO_RETICULUM_BRANCH`
+/// for the setup bundle: `CODEZERO_CATALOG_BRANCH=feat/new-action codezero plugin ls`.
+const CATALOG_BRANCH_ENV_VAR: &str = "CODEZERO_CATALOG_BRANCH";
+
+fn catalog_branch() -> String {
+    std::env::var(CATALOG_BRANCH_ENV_VAR).unwrap_or_else(|_| CATALOG_BRANCH.to_string())
+}
 
 pub fn action_fragment_path(identifier: &str) -> PathBuf {
     Path::new(ACTIONS_DIR).join(format!("{identifier}.yml"))
@@ -129,7 +137,8 @@ struct GitTreeEntry {
 /// manifest is fetched from raw.githubusercontent.com (no auth, no API rate
 /// limit) rather than through the contents API.
 fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
-    let tree_url = format!("https://api.github.com/repos/{CATALOG_REPO}/git/trees/{CATALOG_BRANCH}?recursive=1");
+    let branch = catalog_branch();
+    let tree_url = format!("https://api.github.com/repos/{CATALOG_REPO}/git/trees/{branch}?recursive=1");
 
     let tree: GitTree = ureq::get(&tree_url)
         .set("User-Agent", "codezero-cli")
@@ -147,7 +156,7 @@ fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
 
     let mut actions = Vec::with_capacity(manifest_paths.len());
     for path in manifest_paths {
-        let raw_url = format!("https://raw.githubusercontent.com/{CATALOG_REPO}/{CATALOG_BRANCH}/{path}");
+        let raw_url = format!("https://raw.githubusercontent.com/{CATALOG_REPO}/{branch}/{path}");
         let entry: ActionEntry = ureq::get(&raw_url)
             .call()
             .map_err(|error| anyhow::anyhow!("Couldn't fetch {path}: {error}"))?

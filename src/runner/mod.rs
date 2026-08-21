@@ -4,7 +4,10 @@ pub use docker::DockerComposeRunner;
 
 pub trait Runner {
     fn start(&self) -> anyhow::Result<()>;
-    fn stop(&self) -> anyhow::Result<()>;
+    /// `wipe_volumes` also removes `postgres-data`/`generated-configs`
+    /// (`down -v`) - only `reset` wants that; a plain `stop` should leave
+    /// existing data/secrets intact so the next `start` resumes as-is.
+    fn stop(&self, wipe_volumes: bool) -> anyhow::Result<()>;
     fn restart(&self, service: &str) -> anyhow::Result<()>;
     /// Brings up a single service (e.g. a newly installed action), pulling
     /// its image first if it isn't present locally.

@@ -302,13 +302,17 @@ impl Runner for DockerComposeRunner {
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&self, wipe_volumes: bool) -> anyhow::Result<()> {
         ui::header("CodeZero shutdown", "Stopping CodeZero components.");
         println!();
 
         let label = "stop CodeZero";
         self.print_progress(label, 0, 1);
-        self.docker_compose(&["down", "-v"])?;
+        let mut args = vec!["down"];
+        if wipe_volumes {
+            args.push("-v");
+        }
+        self.docker_compose(&args)?;
         self.print_progress(label, 1, 1);
         self.finish_progress(label);
 
