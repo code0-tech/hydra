@@ -44,6 +44,21 @@ pub fn set_values(path: impl AsRef<Path>, updates: &[(&str, &str)]) -> anyhow::R
     Ok(())
 }
 
+/// Deletes `KEY=value` lines for the given keys, leaving every other line
+/// untouched. Keys that aren't present are a no-op.
+pub fn remove_keys(path: impl AsRef<Path>, keys: &[&str]) -> anyhow::Result<()> {
+    let contents = fs::read_to_string(&path)?;
+    let rendered = contents
+        .lines()
+        .filter(|line| !keys.iter().any(|key| line.starts_with(&format!("{key}="))))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut rendered = rendered;
+    rendered.push('\n');
+    fs::write(path, rendered)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,6 +108,19 @@ mod tests {
         let value = read_value(&path, "IMAGE_TAG").unwrap();
 
         assert_eq!(value, None);
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn removes_matching_keys_and_leaves_others_untouched() {
+        let path = std::env::temp_dir().join(format!("hydra-env-file-test-{}-f.env", std::process::id()));
+        fs::write(&path, "HOSTNAME=localhost\nAQUILA_ACTION_GLS_IDENTIFIER=gls-action\nAQUILA_ACTION_GLS_TOKEN=secret\n").unwrap();
+
+        remove_keys(&path, &["AQUILA_ACTION_GLS_IDENTIFIER", "AQUILA_ACTION_GLS_TOKEN"]).unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, "HOSTNAME=localhost\n");
+
         fs::remove_file(&path).unwrap();
     }
 

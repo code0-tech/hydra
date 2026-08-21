@@ -29,6 +29,20 @@ pub fn action_fragment_path(identifier: &str) -> PathBuf {
     Path::new(ACTIONS_DIR).join(format!("{identifier}.yml"))
 }
 
+/// Derives the `AQUILA_ACTION_<KEY>_IDENTIFIER`/`AQUILA_ACTION_<KEY>_TOKEN`
+/// env var prefix an action's identifier maps to. `config-generator`'s
+/// `aquila.service.configuration.json.erb` template builds aquila's actual
+/// accepted-token list purely by scanning `.env` for pairs matching
+/// `AQUILA_ACTION_(\S+?)_.+` - it has no access to
+/// `.codezero/service.configuration.json` at all, so that's the only place
+/// an installed action's token can actually take effect. Matches the
+/// convention the two built-in actions already use in the bundle's `.env`
+/// (`rest-action` -> `AQUILA_ACTION_REST_*`, `cron-action` -> `AQUILA_ACTION_CRON_*`).
+pub fn aquila_action_env_prefix(identifier: &str) -> String {
+    let key = identifier.strip_suffix("-action").unwrap_or(identifier);
+    format!("AQUILA_ACTION_{}", key.to_uppercase().replace('-', "_"))
+}
+
 /// URL-encoded GitLab project path for the monorepo that builds every action
 /// image (each successful pipeline on `main` tags all rebuilt images with the
 /// same `RETICULUM_CONTAINER_VERSION`).
@@ -289,6 +303,27 @@ impl ServiceConfiguration {
     }
 }
 
+/// Re-merges `codezero plugin install`/`uninstall`-recorded actions into
+/// the service configuration file after a fresh template render. Whatever
+/// the bundle's `service.configuration.json.tera` declares (e.g. reticulum's
+/// built-in `rest-action`/`cron-action`) is reticulum's call, not hydra's -
+/// this only adds back what the CLI itself is responsible for, via
+/// `upsert_action` (merge), never wholesale replacing `.actions` and losing
+/// what the template just rendered.
+pub fn carry_forward_actions_at(path: impl AsRef<Path>, previously_installed: Vec<ActionConfig>) -> anyhow::Result<()> {
+    let mut config = ServiceConfiguration::load_or_default(&path)?;
+
+    for action in previously_installed {
+        config.upsert_action(&action.identifier, &action.token);
+    }
+
+    config.save(&path)
+}
+
+pub fn carry_forward_actions(previously_installed: Vec<ActionConfig>) -> anyhow::Result<()> {
+    carry_forward_actions_at(SERVICE_CONFIGURATION_PATH, previously_installed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,5 +463,80 @@ mod tests {
 
         assert!(!removed);
         assert_eq!(config.actions.len(), 1);
+    }
+
+    #[test]
+    fn aquila_action_env_prefix_strips_the_action_suffix_and_uppercases() {
+        assert_eq!(aquila_action_env_prefix("gls-action"), "AQUILA_ACTION_GLS");
+        assert_eq!(aquila_action_env_prefix("rest-action"), "AQUILA_ACTION_REST");
+    }
+
+    #[test]
+    fn aquila_action_env_prefix_replaces_remaining_dashes() {
+        assert_eq!(
+            aquila_action_env_prefix("multi-word-action"),
+            "AQUILA_ACTION_MULTI_WORD"
+        );
+    }
+
+    #[test]
+    fn carry_forward_actions_merges_onto_whatever_the_template_just_rendered() {
+        let path = std::env::temp_dir().join(format!("hydra-carry-forward-test-{}.json", std::process::id()));
+
+        // Simulates a fresh template render: the bundle's own built-in
+        // actions (e.g. rest-action/cron-action) are already present.
+        let rendered = ServiceConfiguration {
+            actions: vec![ActionConfig {
+                identifier: "rest-action".into(),
+                token: "rest-token".into(),
+                configs: vec![],
+            }],
+            runtimes: vec![],
+        };
+        rendered.save(&path).unwrap();
+
+        let previously_installed = vec![ActionConfig {
+            identifier: "gls-action".into(),
+            token: "gls-token".into(),
+            configs: vec![],
+        }];
+
+        carry_forward_actions_at(&path, previously_installed).unwrap();
+
+        let result = ServiceConfiguration::load_or_default(&path).unwrap();
+        assert_eq!(result.actions.len(), 2);
+        assert!(result.actions.iter().any(|a| a.identifier == "rest-action" && a.token == "rest-token"));
+        assert!(result.actions.iter().any(|a| a.identifier == "gls-action" && a.token == "gls-token"));
+
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn carry_forward_actions_updates_an_existing_entrys_token() {
+        let path = std::env::temp_dir().join(format!("hydra-carry-forward-test-{}-update.json", std::process::id()));
+
+        let rendered = ServiceConfiguration {
+            actions: vec![ActionConfig {
+                identifier: "gls-action".into(),
+                token: "old-token".into(),
+                configs: vec![],
+            }],
+            runtimes: vec![],
+        };
+        rendered.save(&path).unwrap();
+
+        let previously_installed = vec![ActionConfig {
+            identifier: "gls-action".into(),
+            token: "new-token".into(),
+            configs: vec![],
+        }];
+
+        carry_forward_actions_at(&path, previously_installed).unwrap();
+
+        let result = ServiceConfiguration::load_or_default(&path).unwrap();
+        assert_eq!(result.actions.len(), 1);
+        assert_eq!(result.actions[0].token, "new-token");
+
+        fs::remove_file(&path).unwrap();
     }
 }

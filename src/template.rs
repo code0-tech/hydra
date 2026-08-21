@@ -5,7 +5,7 @@ use tera::{Context, Tera};
 
 use crate::{
     bundle::{BundleSource, TemplateMapping},
-    env_file,
+    env_file, ui,
 };
 
 pub fn render_setup_templates(
@@ -17,7 +17,14 @@ pub fn render_setup_templates(
     let output_dir = output_dir.as_ref();
 
     for mapping in mappings {
-        let raw = source.template(&mapping.template)?;
+        let raw = match source.template(&mapping.template) {
+            Ok(raw) => raw,
+            Err(error) if !mapping.required => {
+                ui::warn_line(&format!("Skipping optional '{}': {error}", mapping.template));
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         // `.env` is reticulum's own vendored file, not a Tera template - it's
         // patched in place (same KEY=value replace `env_file::apply_values`
         // uses elsewhere) so every setting reticulum already has a sane

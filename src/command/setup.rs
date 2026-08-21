@@ -5,7 +5,7 @@ use dialoguer::{Confirm, Input, MultiSelect, Password, Select, theme::ColorfulTh
 use serde_json::{Map, Value};
 
 use crate::{
-    action::{SERVICE_CONFIGURATION_PATH, ServiceConfiguration, resolve_dev_tag},
+    action::{SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions, resolve_dev_tag},
     bundle::{BundleSource, Choice, SetupBundle, Step, default_choice, generate_token, join_multiselect},
     env_file,
     runner::{Runner, default_runner},
@@ -317,17 +317,12 @@ pub fn setup(bundle_path: Option<PathBuf>, dev: bool) -> anyhow::Result<()> {
     // service.configuration.json is one of the rendered templates, but it's
     // also the file `codezero install`/`uninstall` maintain — regenerating it
     // from scratch would silently wipe out any installed actions. Carry them
-    // forward across the fresh render (runtimes tokens still get refreshed).
+    // forward across the fresh render (see `carry_forward_actions`).
     let installed_actions = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
 
     fs::create_dir_all(".codezero")?;
     render_setup_templates(&source, &bundle.templates, &context, ".codezero")?;
-
-    if !installed_actions.is_empty() {
-        let mut config = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?;
-        config.actions = installed_actions;
-        config.save(SERVICE_CONFIGURATION_PATH)?;
-    }
+    carry_forward_actions(installed_actions)?;
 
     println!();
     ui::success_line("Configuration generated.");
@@ -428,11 +423,16 @@ mod tests {
         let disk = BundleSource::Disk(source_dir.clone());
 
         let mappings = vec![
-            TemplateMapping { template: ".env".into(), output: ".env".into() },
-            TemplateMapping { template: "docker-compose.yml".into(), output: "docker-compose.yml".into() },
+            TemplateMapping { template: ".env".into(), output: ".env".into(), required: true },
+            TemplateMapping {
+                template: "docker-compose.yml".into(),
+                output: "docker-compose.yml".into(),
+                required: true,
+            },
             TemplateMapping {
                 template: "service.configuration.json.tera".into(),
                 output: "service.configuration.json".into(),
+                required: true,
             },
         ];
 

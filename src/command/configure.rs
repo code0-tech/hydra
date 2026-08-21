@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use crate::{
-    action::{SERVICE_CONFIGURATION_PATH, ServiceConfiguration},
+    action::{SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions},
     bundle::{BundleSource, SetupBundle},
     command::setup::run_wizard,
     env_file,
@@ -29,17 +29,12 @@ pub fn configure(bundle_path: Option<PathBuf>) -> anyhow::Result<()> {
     let context = run_wizard(&bundle, &theme, false, Some(&seed))?;
 
     // Same carry-forward as `setup`: the rendered service.configuration.json
-    // starts from an empty action list, so installed actions have to be
-    // reapplied after rendering or `install`/`uninstall` state would be lost.
+    // starts fresh from what the bundle's template declares, so anything
+    // `install`/`uninstall` added has to be reapplied after rendering.
     let installed_actions = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
 
     render_setup_templates(&source, &bundle.templates, &context, ".codezero")?;
-
-    if !installed_actions.is_empty() {
-        let mut config = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?;
-        config.actions = installed_actions;
-        config.save(SERVICE_CONFIGURATION_PATH)?;
-    }
+    carry_forward_actions(installed_actions)?;
 
     println!();
     ui::muted_line("Applying changes...");

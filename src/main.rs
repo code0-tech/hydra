@@ -101,6 +101,19 @@ enum PluginCommands {
         #[arg(long)]
         index: Option<PathBuf>,
     },
+    /// For developing a new action locally: register an identifier with Aquila
+    /// without a catalog entry or managed container, so you can point your
+    /// own in-progress action (running via `npm run dev`, `cargo run`, ...) at
+    /// it instead of round-tripping through an image build/`plugin install`.
+    Register {
+        /// Whatever you want to call your in-progress action
+        identifier: String,
+    },
+    /// Remove a previously `register`ed identifier.
+    Unregister {
+        /// The same identifier you used with `register`
+        identifier: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -117,6 +130,8 @@ fn main() -> anyhow::Result<()> {
             PluginCommands::Ls { index } => command::plugins::plugins(index),
             PluginCommands::Install { name, index } => command::install::install(index, name),
             PluginCommands::Uninstall { name, index } => command::uninstall::uninstall(index, name),
+            PluginCommands::Register { identifier } => command::register::register(identifier),
+            PluginCommands::Unregister { identifier } => command::register::unregister(identifier),
         },
         Commands::Status => command::status::status(),
         Commands::Logs { service, follow, tail } => command::logs::logs(service, follow, tail),

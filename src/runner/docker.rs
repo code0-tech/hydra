@@ -15,6 +15,7 @@ use super::Runner;
 pub struct DockerComposeRunner {
     env_file: PathBuf,
     compose_file: PathBuf,
+    override_compose_file: PathBuf,
     actions_dir: PathBuf,
 }
 
@@ -23,15 +24,23 @@ impl Default for DockerComposeRunner {
         Self {
             env_file: ".codezero/.env".into(),
             compose_file: ".codezero/docker-compose.yml".into(),
+            override_compose_file: ".codezero/docker-compose.override.yml".into(),
             actions_dir: ".codezero/actions".into(),
         }
     }
 }
 
-/// The main compose file, followed by every installed action's compose
-/// fragment (sorted for a stable, reproducible `-f` order).
-fn collect_compose_files(compose_file: &Path, actions_dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+/// The main compose file, then the override file if the bundle provided one
+/// (e.g. mounting `.codezero/service.configuration.json` into aquila - see
+/// `bundle/manifest.json`'s optional `docker-compose.override.yml` template),
+/// followed by every installed action's compose fragment (sorted for a
+/// stable, reproducible `-f` order).
+fn collect_compose_files(compose_file: &Path, override_compose_file: &Path, actions_dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
     let mut files = vec![compose_file.to_path_buf()];
+
+    if override_compose_file.is_file() {
+        files.push(override_compose_file.to_path_buf());
+    }
 
     if actions_dir.is_dir() {
         let mut extra: Vec<PathBuf> = fs::read_dir(actions_dir)?
@@ -86,7 +95,7 @@ fn parse_progress_line(line: &str) -> Option<(String, u64, u64)> {
 
 impl DockerComposeRunner {
     fn docker_compose(&self, args: &[&str]) -> anyhow::Result<Output> {
-        let compose_files = collect_compose_files(&self.compose_file, &self.actions_dir)?;
+        let compose_files = collect_compose_files(&self.compose_file, &self.override_compose_file, &self.actions_dir)?;
 
         let mut command = Command::new("docker");
         command.args(["compose", "--env-file"]).arg(&self.env_file);
@@ -118,7 +127,7 @@ impl DockerComposeRunner {
     /// (rather than captured), so interactive/streaming output like
     /// `ps`'s table formatting or `logs --follow` behaves natively.
     fn docker_compose_interactive(&self, args: &[&str]) -> anyhow::Result<()> {
-        let compose_files = collect_compose_files(&self.compose_file, &self.actions_dir)?;
+        let compose_files = collect_compose_files(&self.compose_file, &self.override_compose_file, &self.actions_dir)?;
 
         let mut command = Command::new("docker");
         command.args(["compose", "--env-file"]).arg(&self.env_file);
@@ -155,7 +164,7 @@ impl DockerComposeRunner {
     /// stdout/stderr already makes Compose fall back to non-interactive
     /// (plain-style) output on its own, since it detects there's no TTY.
     fn pull_with_progress(&self, label: &str, services: &[String]) -> anyhow::Result<()> {
-        let compose_files = collect_compose_files(&self.compose_file, &self.actions_dir)?;
+        let compose_files = collect_compose_files(&self.compose_file, &self.override_compose_file, &self.actions_dir)?;
 
         let mut command = Command::new("docker");
         command.args(["compose", "--env-file"]).arg(&self.env_file);
@@ -285,14 +294,7 @@ impl Runner for DockerComposeRunner {
 
         let services = self.services()?;
 
-        // config-generator has `restart: "no"` and runs once to populate the
-        // shared generated-configs volume. If it already ran to completion in
-        // an earlier `start` (e.g. against an older .env, before a config
-        // change), Compose considers it done and won't rerun it on a plain
-        // `up -d` — silently reusing whatever stale config it wrote the first
-        // time. Force it to always rerun fresh so generated configs never go
-        // stale relative to the current .env.
-        let _ = self.docker_compose(&["rm", "-f", "-s", "config-generator"]);
+        self.regenerate_configs()?;
 
         self.pull_with_progress("download components", &services)?;
         self.start_services(&services)?;
@@ -318,6 +320,19 @@ impl Runner for DockerComposeRunner {
 
         println!();
         ui::success_line("CodeZero stopped.");
+        Ok(())
+    }
+
+    fn regenerate_configs(&self) -> anyhow::Result<()> {
+        // config-generator has `restart: "no"` and runs once to populate the
+        // shared generated-configs volume. If it already ran to completion in
+        // an earlier `start` (e.g. against an older .env, before a config
+        // change), Compose considers it done and won't rerun it on a plain
+        // `up -d` — silently reusing whatever stale config it wrote the first
+        // time. Force it stale so the next `up`/`start_service` reruns it
+        // fresh (Compose reruns anything depending on it, like aquila, only
+        // after it completes again).
+        let _ = self.docker_compose(&["rm", "-f", "-s", "config-generator"]);
         Ok(())
     }
 
@@ -378,7 +393,8 @@ mod tests {
         fs::write(actions_dir.join("ignored.txt"), "").unwrap();
 
         let compose_file = dir.join("docker-compose.yml");
-        let files = collect_compose_files(&compose_file, &actions_dir).unwrap();
+        let override_compose_file = dir.join("docker-compose.override.yml");
+        let files = collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
 
         assert_eq!(
             files,
@@ -395,11 +411,29 @@ mod tests {
     #[test]
     fn only_the_main_compose_file_when_no_actions_dir() {
         let compose_file = PathBuf::from(".codezero/docker-compose.yml");
+        let override_compose_file = PathBuf::from(".codezero/does-not-exist.yml");
         let actions_dir = PathBuf::from(".codezero/does-not-exist");
 
-        let files = collect_compose_files(&compose_file, &actions_dir).unwrap();
+        let files = collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
 
         assert_eq!(files, vec![compose_file]);
+    }
+
+    #[test]
+    fn includes_the_override_file_when_it_exists_right_after_the_main_compose_file() {
+        let dir = std::env::temp_dir().join(format!("hydra-compose-override-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let compose_file = dir.join("docker-compose.yml");
+        let override_compose_file = dir.join("docker-compose.override.yml");
+        fs::write(&override_compose_file, "").unwrap();
+        let actions_dir = dir.join("does-not-exist");
+
+        let files = collect_compose_files(&compose_file, &override_compose_file, &actions_dir).unwrap();
+
+        assert_eq!(files, vec![compose_file, override_compose_file]);
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

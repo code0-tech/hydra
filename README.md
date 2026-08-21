@@ -68,6 +68,8 @@ done it prints the URL CodeZero is running at.
 | `codezero plugin ls` | List every action in the catalog (fetched live from centaurus) and which ones you've installed. |
 | `codezero plugin install <name>` | Add an action (e.g. `codezero plugin install gls-action`, or `gls-action@1.2.3` for a specific version). Fails with a clear message if the action needs a capability (like `rest-action`) your setup doesn't have enabled. |
 | `codezero plugin uninstall <name>` | Remove a previously installed action. |
+| `codezero plugin register <identifier>` | For developing a new action: registers an identifier with Aquila (no catalog entry, no managed container) and prints the `AQUILA_URL`/`AUTH_TOKEN` to point your locally-running action at. |
+| `codezero plugin unregister <identifier>` | Remove a previously `register`ed identifier. |
 | `codezero reset` | Stop everything, wipe `.codezero/`, and run `setup` again from scratch. Destructive — generates fresh secrets and passwords. Prefer `upgrade`/`configure` if you just want to change something. |
 
 ## How it's put together

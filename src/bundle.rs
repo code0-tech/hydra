@@ -125,6 +125,16 @@ pub struct Secret {
 pub struct TemplateMapping {
     pub template: String,
     pub output: String,
+    /// When false, a fetch failure is skipped (with a warning) instead of
+    /// failing setup outright - for templates that may not exist yet on
+    /// every bundle source (e.g. an override compose file being rolled out
+    /// gradually on reticulum's side).
+    #[serde(default = "default_required")]
+    pub required: bool,
+}
+
+fn default_required() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Clone)]
