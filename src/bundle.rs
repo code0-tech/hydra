@@ -11,30 +11,49 @@ use serde_json::{Map, Value};
 /// folder so it's one place to update, not several.
 const RETICULUM_REPO: &str = "code0-tech/reticulum";
 const RETICULUM_BRANCH: &str = "main";
-const RETICULUM_BUNDLE_PATH: &str = "docker-compose";
+const RETICULUM_BUNDLE_PATH: &str = "cli";
+
+/// Templates that haven't moved out of the old `docker-compose` folder yet
+/// (only `manifest.json` and the templates reticulum has migrated live under
+/// `RETICULUM_BUNDLE_PATH`) - checked as a fallback when a template 404s
+/// there. Drop this once reticulum finishes moving everything into `cli/`.
+const RETICULUM_LEGACY_BUNDLE_PATH: &str = "docker-compose";
 
 /// Env var override for `RETICULUM_BRANCH` - lets you test against an
 /// unmerged reticulum branch (e.g. one that hasn't landed on `main` yet)
 /// without a code change: `CODEZERO_RETICULUM_BRANCH=feat/cli-manifest codezero setup`.
 const RETICULUM_BRANCH_ENV_VAR: &str = "CODEZERO_RETICULUM_BRANCH";
 
-/// Raw-content URL for a bundle file.
-fn raw_url(name: &str) -> String {
+/// Raw-content URL for a bundle file under the given folder.
+fn raw_url(path: &str, name: &str) -> String {
     let branch =
         std::env::var(RETICULUM_BRANCH_ENV_VAR).unwrap_or_else(|_| RETICULUM_BRANCH.to_string());
-    format!(
-        "https://raw.githubusercontent.com/{RETICULUM_REPO}/{branch}/{RETICULUM_BUNDLE_PATH}/{name}"
-    )
+    format!("https://raw.githubusercontent.com/{RETICULUM_REPO}/{branch}/{path}/{name}")
+}
+
+fn fetch_raw_from(path: &str, name: &str) -> Result<String, ureq::Error> {
+    ureq::get(&raw_url(path, name))
+        .set("User-Agent", "codezero-cli")
+        .call()?
+        .into_string()
+        .map_err(|error| ureq::Error::from(std::io::Error::other(error)))
 }
 
 fn fetch_raw(name: &str) -> anyhow::Result<String> {
-    let url = raw_url(name);
-    ureq::get(&url)
-        .set("User-Agent", "codezero-cli")
-        .call()
-        .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}"))?
-        .into_string()
-        .map_err(|error| anyhow::anyhow!("Couldn't read {name}: {error}"))
+    fetch_raw_from(RETICULUM_BUNDLE_PATH, name)
+        .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}"))
+}
+
+/// Fetches a template, falling back to the legacy `docker-compose` folder on
+/// a 404 - reticulum is migrating its bundle files into `cli/` gradually, so
+/// not every template lives in the new location yet.
+fn fetch_template(name: &str) -> anyhow::Result<String> {
+    match fetch_raw_from(RETICULUM_BUNDLE_PATH, name) {
+        Ok(content) => Ok(content),
+        Err(ureq::Error::Status(404, _)) => fetch_raw_from(RETICULUM_LEGACY_BUNDLE_PATH, name)
+            .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}")),
+        Err(error) => Err(anyhow::anyhow!("Couldn't fetch {name}: {error}")),
+    }
 }
 
 /// Where the setup bundle (manifest + templates) is read from: a directory on
@@ -80,7 +99,7 @@ impl BundleSource {
                     anyhow::anyhow!("Couldn't read template at {}: {error}", path.display())
                 })
             }
-            BundleSource::Remote => fetch_raw(name),
+            BundleSource::Remote => fetch_template(name),
         }
     }
 }
