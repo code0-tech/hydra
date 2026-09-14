@@ -343,12 +343,28 @@ pub fn setup(bundle_path: Option<PathBuf>, dev: bool) -> anyhow::Result<()> {
     // service.configuration.json is one of the rendered templates, but it's
     // also the file `codezero install`/`uninstall` maintain — regenerating it
     // from scratch would silently wipe out any installed actions. Carry them
-    // forward across the fresh render (see `carry_forward_actions`).
+    // forward across the fresh render (see `carry_forward_actions`). Exclude
+    // whatever identifiers the fresh render already produced (e.g.
+    // reticulum's built-in `rest-action`/`cron-action`) - those just got new
+    // tokens matching the freshly-written `.env`, so carrying their *old*
+    // entry forward would silently reintroduce a token mismatch.
     let installed_actions =
         ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?.actions;
 
     fs::create_dir_all(".codezero")?;
     render_setup_templates(&source, &bundle.templates, &context, ".codezero")?;
+
+    let rendered_identifiers: std::collections::HashSet<String> =
+        ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?
+            .actions
+            .into_iter()
+            .map(|action| action.identifier)
+            .collect();
+    let installed_actions: Vec<_> = installed_actions
+        .into_iter()
+        .filter(|action| !rendered_identifiers.contains(&action.identifier))
+        .collect();
+
     carry_forward_actions(installed_actions)?;
 
     println!();
