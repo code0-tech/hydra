@@ -31,12 +31,13 @@ fn raw_url(path: &str, name: &str) -> String {
     format!("https://raw.githubusercontent.com/{RETICULUM_REPO}/{branch}/{path}/{name}")
 }
 
-fn fetch_raw_from(path: &str, name: &str) -> Result<String, ureq::Error> {
+fn fetch_raw_from(path: &str, name: &str) -> Result<String, Box<ureq::Error>> {
     ureq::get(&raw_url(path, name))
         .set("User-Agent", "codezero-cli")
-        .call()?
+        .call()
+        .map_err(Box::new)?
         .into_string()
-        .map_err(|error| ureq::Error::from(std::io::Error::other(error)))
+        .map_err(|error| Box::new(ureq::Error::from(std::io::Error::other(error))))
 }
 
 fn fetch_raw(name: &str) -> anyhow::Result<String> {
@@ -50,8 +51,10 @@ fn fetch_raw(name: &str) -> anyhow::Result<String> {
 fn fetch_template(name: &str) -> anyhow::Result<String> {
     match fetch_raw_from(RETICULUM_BUNDLE_PATH, name) {
         Ok(content) => Ok(content),
-        Err(ureq::Error::Status(404, _)) => fetch_raw_from(RETICULUM_LEGACY_BUNDLE_PATH, name)
-            .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}")),
+        Err(boxed) if matches!(*boxed, ureq::Error::Status(404, _)) => {
+            fetch_raw_from(RETICULUM_LEGACY_BUNDLE_PATH, name)
+                .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}"))
+        }
         Err(error) => Err(anyhow::anyhow!("Couldn't fetch {name}: {error}")),
     }
 }
