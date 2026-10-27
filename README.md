@@ -23,6 +23,21 @@ brew install code0-tech/tap/codezero
 cargo install codezero
 ```
 
+**Mise** ([mise-en-place](https://mise.jdx.dev)):
+
+```sh
+mise use -g github:code0-tech/hydra
+```
+
+Installs the prebuilt `codezero` binary from the GitHub releases for your OS/arch — no registry
+shorthand needed. Pin a version with `github:code0-tech/hydra@<version>` (the release tag without its
+leading `v`, e.g. `@0.0.3`), or add it to a project's `mise.toml`:
+
+```toml
+[tools]
+"github:code0-tech/hydra" = "latest"
+```
+
 **Prebuilt binary:** grab the archive for your OS/arch from the
 [latest release](https://github.com/code0-tech/hydra/releases/latest) and put the extracted
 `codezero` on your `PATH`.
