@@ -1,5 +1,5 @@
 {
-  "name": "codezero",
+  "name": "@code0-tech/cli",
   "version": "0.1.0",
   "description": "A CLI setup wizard for running CodeZero locally",
   "license": "MIT",
