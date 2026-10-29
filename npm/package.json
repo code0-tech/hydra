@@ -1,0 +1,28 @@
+{
+  "name": "@code0-tech/cli",
+  "version": "0.1.0",
+  "description": "A CLI setup wizard for running CodeZero locally",
+  "license": "MIT",
+  "homepage": "https://codezero.build",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code0-tech/hydra.git"
+  },
+  "keywords": ["codezero", "cli", "setup"],
+  "bin": {
+    "codezero": "bin/codezero.js"
+  },
+  "files": [
+    "bin/codezero.js",
+    "lib/install.js",
+    "lib/extract.js"
+  ],
+  "scripts": {
+    "postinstall": "node lib/install.js || exit 0"
+  },
+  "os": ["darwin", "linux", "win32"],
+  "cpu": ["x64", "arm64"],
+  "engines": {
+    "node": ">=18"
+  }
+}

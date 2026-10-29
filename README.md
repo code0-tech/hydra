@@ -23,6 +23,12 @@ brew install code0-tech/tap/codezero
 cargo install codezero
 ```
 
+**npm:**
+
+```sh
+npm install -g codezero
+```
+
 **Prebuilt binary:** grab the archive for your OS/arch from the
 [latest release](https://github.com/code0-tech/hydra/releases/latest) and put the extracted
 `codezero` on your `PATH`.

@@ -30,6 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set crate version from tag
+        shell: bash
+        run: sed -i.bak "s/^version = \".*\"/version = \"${GITHUB_REF_NAME#v}\"/" Cargo.toml && rm Cargo.toml.bak
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -83,3 +87,41 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+  cargo-publish:
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set crate version from tag
+        run: sed -i "s/^version = \".*\"/version = \"${GITHUB_REF_NAME#v}\"/" Cargo.toml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish
+        run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+
+  npm-publish:
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+
+      - name: Set package version from tag
+        working-directory: npm
+        run: npm version --no-git-tag-version "${GITHUB_REF_NAME#v}"
+
+      - name: Publish
+        working-directory: npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
