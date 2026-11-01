@@ -99,7 +99,7 @@ async function ensureBinary() {
   const archive = await get(url);
   await verifyChecksum(tag, assetName, archive);
 
-  const data = ext === 'zip' ? extractZip(archive, binaryName()) : extractTarGz(archive, binaryName());
+  const data = ext === 'zip' ? await extractZip(archive, binaryName()) : await extractTarGz(archive, binaryName());
 
   fs.mkdirSync(binaryDir(), { recursive: true });
   const tmp = `${dest}.download`;
