@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use rand::{Rng, distributions::Alphanumeric};
+use rand::{RngExt, distr::Alphanumeric};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -247,8 +247,8 @@ pub fn default_choice(options: &[Choice]) -> Option<&Choice> {
 
 /// A random alphanumeric string suitable for use as a shared secret/token.
 pub fn generate_token(length: usize) -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
+    rand::rng()
+        .sample_iter(Alphanumeric)
         .take(length)
         .map(char::from)
         .collect()
