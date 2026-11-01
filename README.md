@@ -26,7 +26,7 @@ cargo install codezero
 **npm:**
 
 ```sh
-npm install -g codezero
+npm install -g @code0-tech/cli
 ```
 
 **Prebuilt binary:** grab the archive for your OS/arch from the
