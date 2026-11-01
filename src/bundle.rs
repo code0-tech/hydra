@@ -33,11 +33,12 @@ fn raw_url(path: &str, name: &str) -> String {
 
 fn fetch_raw_from(path: &str, name: &str) -> Result<String, Box<ureq::Error>> {
     ureq::get(&raw_url(path, name))
-        .set("User-Agent", "codezero-cli")
+        .header("User-Agent", "codezero-cli")
         .call()
         .map_err(Box::new)?
-        .into_string()
-        .map_err(|error| Box::new(ureq::Error::from(std::io::Error::other(error))))
+        .body_mut()
+        .read_to_string()
+        .map_err(Box::new)
 }
 
 fn fetch_raw(name: &str) -> anyhow::Result<String> {
@@ -51,7 +52,7 @@ fn fetch_raw(name: &str) -> anyhow::Result<String> {
 fn fetch_template(name: &str) -> anyhow::Result<String> {
     match fetch_raw_from(RETICULUM_BUNDLE_PATH, name) {
         Ok(content) => Ok(content),
-        Err(boxed) if matches!(*boxed, ureq::Error::Status(404, _)) => {
+        Err(boxed) if matches!(*boxed, ureq::Error::StatusCode(404)) => {
             fetch_raw_from(RETICULUM_LEGACY_BUNDLE_PATH, name)
                 .map_err(|error| anyhow::anyhow!("Couldn't fetch {name}: {error}"))
         }

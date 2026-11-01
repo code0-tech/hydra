@@ -82,7 +82,8 @@ pub fn resolve_dev_tag() -> anyhow::Result<String> {
     let pipelines: Vec<GitlabPipeline> = ureq::get(&url)
         .call()
         .map_err(|error| anyhow::anyhow!("Couldn't reach GitLab to resolve the dev tag: {error}"))?
-        .into_json()
+        .body_mut()
+        .read_json()
         .map_err(|error| anyhow::anyhow!("Couldn't parse GitLab's pipeline response: {error}"))?;
 
     let pipeline = pipelines
@@ -161,10 +162,11 @@ fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
         format!("https://api.github.com/repos/{CATALOG_REPO}/git/trees/{branch}?recursive=1");
 
     let tree: GitTree = ureq::get(&tree_url)
-        .set("User-Agent", "codezero-cli")
+        .header("User-Agent", "codezero-cli")
         .call()
         .map_err(|error| anyhow::anyhow!("Couldn't reach the action catalog: {error}"))?
-        .into_json()
+        .body_mut()
+        .read_json()
         .map_err(|error| anyhow::anyhow!("Couldn't parse the action catalog listing: {error}"))?;
 
     let manifest_paths: Vec<&str> = tree
@@ -184,7 +186,8 @@ fn fetch_remote_catalog() -> anyhow::Result<ActionCatalog> {
         let entry: ActionEntry = ureq::get(&raw_url)
             .call()
             .map_err(|error| anyhow::anyhow!("Couldn't fetch {path}: {error}"))?
-            .into_json()
+            .body_mut()
+            .read_json()
             .map_err(|error| anyhow::anyhow!("Couldn't parse {path}: {error}"))?;
         actions.push(entry);
     }
