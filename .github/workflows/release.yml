@@ -104,6 +104,8 @@ jobs:
   npm-publish:
     needs: github-release
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -112,6 +114,9 @@ jobs:
           node-version: 26
           registry-url: https://registry.npmjs.org
 
+      - name: Update npm
+        run: npm install -g npm@latest
+
       - name: Set package version from tag
         working-directory: npm
         run: npm version --no-git-tag-version "${GITHUB_REF_NAME#v}"
@@ -119,5 +124,3 @@ jobs:
       - name: Publish
         working-directory: npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
