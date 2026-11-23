@@ -64,13 +64,32 @@ done it prints the URL CodeZero is running at.
 | `codezero status` | Show each service's current state. |
 | `codezero logs [service] [-f] [--tail N]` | Stream logs for one service, or everything. |
 | `codezero configure` | Re-run the setup wizard against your existing install — prompts are pre-filled with current values, existing secrets are kept as-is. |
-| `codezero upgrade [--tag] [--registry] [--edition] [--dev]` | Bump the running image version in place — pulls and recreates only what changed, without touching your existing secrets/passwords. Prompts for a version if no flag is given. |
-| `codezero plugin ls` | List every action in the catalog (fetched live from centaurus) and which ones you've installed. |
+| `codezero plugin ls` | List every action in the catalog (fetched live from centaurus) and which ones you've installed, plus any actions you've `register`ed locally (shown as `registered`). |
 | `codezero plugin install <name>` | Add an action (e.g. `codezero plugin install gls-action`, or `gls-action@1.2.3` for a specific version). Fails with a clear message if the action needs a capability (like `rest-action`) your setup doesn't have enabled. |
 | `codezero plugin uninstall <name>` | Remove a previously installed action. |
 | `codezero plugin register <identifier>` | For developing a new action: registers an identifier with Aquila (no catalog entry, no managed container) and prints the `AQUILA_URL`/`AUTH_TOKEN` to point your locally-running action at. |
 | `codezero plugin unregister <identifier>` | Remove a previously `register`ed identifier. |
-| `codezero reset` | Stop everything, wipe `.codezero/`, and run `setup` again from scratch. Destructive — generates fresh secrets and passwords. Prefer `upgrade`/`configure` if you just want to change something. |
+| `codezero reset` | Stop everything, wipe `.codezero/`, and run `setup` again from scratch. Destructive — generates fresh secrets and passwords. Prefer `configure` if you just want to change something. |
+
+## Staying up to date
+
+On every run `codezero` kicks off a detached background check (throttled to once a day) for a newer
+in-progress build and caches the result, so no command ever waits on the network. When a newer build
+than your pinned version is available, the next run prints a one-line reminder.
+
+To apply it there's an **experimental** `--upgrade` flag (a dedicated `upgrade` command will replace
+it later):
+
+```sh
+codezero --upgrade --dev            # move to the latest in-progress build
+codezero --upgrade --tag <version>  # or pin a specific version
+```
+
+It asks for confirmation (a refreshed bundle may bring breaking changes), then refetches the bundle
+from reticulum, bumps both the core-platform and action image tags, and recreates only what changed.
+Your secrets, admin account, and installed actions are kept — the render is seeded from your whole
+existing `.env`, so nothing you've configured is lost. `--registry`/`--edition`/`--bundle` fine-tune
+the source the same way `setup` does.
 
 ## How it's put together
 

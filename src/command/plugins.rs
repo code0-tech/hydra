@@ -3,11 +3,75 @@ use std::path::PathBuf;
 use console::{measure_text_width, style};
 
 use crate::{
-    action::{ActionCatalog, action_fragment_path},
+    action::{
+        ActionCatalog, SERVICE_CONFIGURATION_PATH, ServiceConfiguration, action_fragment_path,
+    },
     ui,
 };
 
 const DESCRIPTION_MAX_WIDTH: usize = 56;
+
+/// How an action shows up in the `plugin ls` STATUS column.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Status {
+    /// A catalog action with a compose fragment under `.codezero/actions/`
+    /// (i.e. added via `plugin install`).
+    Installed,
+    /// An identifier `plugin register`ed with Aquila but not in the catalog -
+    /// a locally-developed action pointed at the runtime by hand.
+    Registered,
+    /// A catalog action that isn't installed.
+    Available,
+}
+
+impl Status {
+    /// The plain (unstyled) label, used for column-width sizing.
+    fn label(self) -> &'static str {
+        match self {
+            Status::Installed => "installed",
+            Status::Registered => "registered",
+            Status::Available => "-",
+        }
+    }
+
+    /// The styled cell as printed. `pad` measures visible width, so styling
+    /// here (after sizing off `label`) still lines the column up.
+    fn cell(self) -> String {
+        match self {
+            Status::Installed => ui::success().apply_to("installed").to_string(),
+            Status::Registered => ui::secondary().apply_to("registered").to_string(),
+            Status::Available => ui::muted().apply_to("-").to_string(),
+        }
+    }
+}
+
+/// One rendered table row — a catalog action or a locally-registered one,
+/// flattened so width-sizing and printing don't care which it came from.
+struct DisplayRow {
+    name: String,
+    status: Status,
+    /// Comma-joined dependencies, empty when there are none.
+    requires: String,
+    /// Catalog description, empty when there is none (or for registered actions,
+    /// which have no catalog entry).
+    description: String,
+}
+
+/// The identifiers configured locally (via `plugin register`) that aren't in
+/// the catalog — the actions `plugin ls` would otherwise never mention.
+/// Installed catalog actions and base-stack ones (rest/cron) are in the catalog
+/// too, so they're excluded here and shown as normal catalog rows instead.
+fn registered_only(catalog: &ActionCatalog, config: &ServiceConfiguration) -> Vec<String> {
+    let mut ids: Vec<String> = config
+        .actions
+        .iter()
+        .filter(|action| catalog.find(&action.identifier).is_none())
+        .map(|action| action.identifier.clone())
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
 
 /// Pads styled text out to `width` using its *visible* width - `measure_text_width`
 /// strips ANSI escapes first, so padding after styling (rather than before) still
@@ -85,39 +149,74 @@ fn row(cells: &[String], widths: &[usize]) -> String {
 
 pub fn plugins(index_path: Option<PathBuf>) -> anyhow::Result<()> {
     let catalog = ActionCatalog::load(index_path.as_deref())?;
+    // Missing/absent before setup is fine - `load_or_default` yields an empty
+    // config, so `plugin ls` still lists the catalog.
+    let config = ServiceConfiguration::load_or_default(SERVICE_CONFIGURATION_PATH)?;
 
-    let mut entries = catalog.actions;
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    // Catalog actions first (sorted by name), then anything registered locally.
+    let mut catalog_entries: Vec<&_> = catalog.actions.iter().collect();
+    catalog_entries.sort_by(|a, b| a.name.cmp(&b.name));
 
-    ui::header("Plugins", "Every action in the catalog, installed or not.");
+    let mut rows: Vec<DisplayRow> = catalog_entries
+        .iter()
+        .map(|entry| DisplayRow {
+            name: entry.name.clone(),
+            status: if action_fragment_path(&entry.identifier).exists() {
+                Status::Installed
+            } else {
+                Status::Available
+            },
+            requires: entry.dependencies.join(", "),
+            description: entry.description.clone(),
+        })
+        .collect();
+
+    for identifier in registered_only(&catalog, &config) {
+        rows.push(DisplayRow {
+            name: identifier,
+            status: Status::Registered,
+            requires: String::new(),
+            description: String::new(),
+        });
+    }
+
+    ui::header(
+        "Plugins",
+        "Catalog actions, plus anything you've registered locally.",
+    );
     println!();
 
-    if entries.is_empty() {
+    if rows.is_empty() {
         ui::muted_line("No actions available.");
         return Ok(());
     }
 
-    let name_width = entries
+    let name_width = rows
         .iter()
-        .map(|entry| entry.name.len())
+        .map(|row| row.name.len())
         .max()
         .unwrap_or(0)
         .max(4);
-    let status_width = "installed".len();
-    let requires_width = entries
+    let status_width = rows
         .iter()
-        .map(|entry| entry.dependencies.join(", ").len())
+        .map(|row| row.status.label().len())
+        .max()
+        .unwrap_or(0)
+        .max("STATUS".len());
+    let requires_width = rows
+        .iter()
+        .map(|row| row.requires.len())
         .max()
         .unwrap_or(0)
         .max("REQUIRES".len());
 
-    let description_lines: Vec<Vec<String>> = entries
+    let description_lines: Vec<Vec<String>> = rows
         .iter()
-        .map(|entry| {
-            if entry.description.is_empty() {
+        .map(|row| {
+            if row.description.is_empty() {
                 vec!["-".to_string()]
             } else {
-                wrap(&entry.description, DESCRIPTION_MAX_WIDTH)
+                wrap(&row.description, DESCRIPTION_MAX_WIDTH)
             }
         })
         .collect();
@@ -146,18 +245,13 @@ pub fn plugins(index_path: Option<PathBuf>) -> anyhow::Result<()> {
     );
     println!("{}", ui::muted().apply_to(border(&widths, "├", "┼", "┤")));
 
-    for (entry, description_lines) in entries.iter().zip(&description_lines) {
-        let installed = action_fragment_path(&entry.identifier).exists();
+    for (entry, description_lines) in rows.iter().zip(&description_lines) {
         let name = style(&entry.name).bold().to_string();
-        let status = if installed {
-            ui::success().apply_to("installed").to_string()
-        } else {
-            ui::muted().apply_to("-").to_string()
-        };
-        let requires = if entry.dependencies.is_empty() {
+        let status = entry.status.cell();
+        let requires = if entry.requires.is_empty() {
             ui::muted().apply_to("-").to_string()
         } else {
-            entry.dependencies.join(", ")
+            entry.requires.clone()
         };
 
         println!(
@@ -182,4 +276,57 @@ pub fn plugins(index_path: Option<PathBuf>) -> anyhow::Result<()> {
     println!("{}", ui::muted().apply_to(border(&widths, "└", "┴", "┘")));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn catalog() -> ActionCatalog {
+        serde_json::from_value(serde_json::json!({
+            "actions": [
+                { "name": "gls", "identifier": "gls-action",
+                  "deployment": { "docker": { "image": "ghcr.io/x/gls-action" } } },
+                { "name": "rest-action", "identifier": "rest-action",
+                  "deployment": { "docker": { "image": "ghcr.io/x/rest-action" } } }
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn registered_only_returns_config_actions_absent_from_the_catalog() {
+        let catalog = catalog();
+        let mut config = ServiceConfiguration::default();
+        config.upsert_action("gls-action", "t1"); // installed catalog action
+        config.upsert_action("rest-action", "t2"); // base-stack catalog action
+        config.upsert_action("my-dev-action", "t3"); // locally registered, not in catalog
+
+        assert_eq!(
+            registered_only(&catalog, &config),
+            vec!["my-dev-action".to_string()]
+        );
+    }
+
+    #[test]
+    fn registered_only_is_empty_when_everything_is_a_catalog_action() {
+        let catalog = catalog();
+        let mut config = ServiceConfiguration::default();
+        config.upsert_action("gls-action", "t1");
+
+        assert!(registered_only(&catalog, &config).is_empty());
+    }
+
+    #[test]
+    fn registered_only_sorts_and_dedupes() {
+        let catalog = catalog();
+        let mut config = ServiceConfiguration::default();
+        config.upsert_action("zeta-action", "t1");
+        config.upsert_action("alpha-action", "t2");
+
+        assert_eq!(
+            registered_only(&catalog, &config),
+            vec!["alpha-action".to_string(), "zeta-action".to_string()]
+        );
+    }
 }
