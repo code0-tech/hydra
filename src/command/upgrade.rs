@@ -5,7 +5,8 @@ use serde_json::{Map, Value};
 
 use crate::{
     action::{
-        SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions, resolve_dev_tag,
+        SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions,
+        resolve_action_dev_tag, resolve_dev_tag,
     },
     bundle::{BundleSource, SetupBundle},
     env_file,
@@ -44,18 +45,27 @@ pub fn upgrade(
         anyhow::bail!("No CodeZero setup found. Run `codezero setup` first.");
     }
 
-    let target = match tag {
-        Some(tag) => tag,
+    // Core and action images are built by different repos (reticulum vs
+    // centaurus) on independent pipeline-id counters, so `--dev` resolves each
+    // against its own project. An explicit `--tag` pins both to the same build
+    // the user asked for.
+    let (core_target, action_target) = match tag {
+        Some(tag) => (tag.clone(), tag),
         None if dev => {
             ui::muted_line("Resolving the latest CodeZero build...");
-            resolve_dev_tag()?
+            (resolve_dev_tag()?, resolve_action_dev_tag()?)
         }
         None => anyhow::bail!(
             "Pick a build to upgrade to: pass `--tag <version>`, or `--dev` for the latest in-progress build."
         ),
     };
 
-    if !confirm_upgrade(&target, registry.as_deref(), edition.as_deref())? {
+    if !confirm_upgrade(
+        &core_target,
+        &action_target,
+        registry.as_deref(),
+        edition.as_deref(),
+    )? {
         ui::warn_line("Upgrade cancelled.");
         return Ok(());
     }
@@ -67,7 +77,8 @@ pub fn upgrade(
     let context = build_upgrade_context(
         &bundle.static_values,
         &seed,
-        &target,
+        &core_target,
+        &action_target,
         registry.as_deref(),
         edition.as_deref(),
     );
@@ -87,16 +98,19 @@ pub fn upgrade(
 
     // Clear any pending "new build available" reminder right away rather than
     // waiting for the next background check to catch up.
-    update_check::record_current_tag(&target);
+    update_check::record_current_tag(&core_target, &action_target);
 
-    ui::success_line(&format!("CodeZero upgraded to {target}."));
+    ui::success_line(&format!(
+        "CodeZero upgraded to {core_target} (actions {action_target})."
+    ));
     Ok(())
 }
 
 /// Warns that an upgrade can bring breaking changes and spells out exactly what
 /// is about to change, then asks for an explicit yes (defaulting to no).
 fn confirm_upgrade(
-    target: &str,
+    core_target: &str,
+    action_target: &str,
     registry: Option<&str>,
     edition: Option<&str>,
 ) -> anyhow::Result<bool> {
@@ -104,8 +118,8 @@ fn confirm_upgrade(
     let current_actions = env_file::read_value(ENV_PATH, "ACTION_IMAGE_TAG")?.unwrap_or_default();
 
     ui::warn_line("This refetches the latest bundle and may include breaking changes.");
-    ui::muted_line(&format!("  core platform:  {current_core} -> {target}"));
-    ui::muted_line(&format!("  actions:        {current_actions} -> {target}"));
+    ui::muted_line(&format!("  core platform:  {current_core} -> {core_target}"));
+    ui::muted_line(&format!("  actions:        {current_actions} -> {action_target}"));
     if let Some(registry) = registry {
         ui::muted_line(&format!("  image registry: {registry}"));
     }
@@ -133,7 +147,8 @@ fn confirm_upgrade(
 fn build_upgrade_context(
     static_values: &Map<String, Value>,
     seed: &HashMap<String, String>,
-    target: &str,
+    core_target: &str,
+    action_target: &str,
     registry: Option<&str>,
     edition: Option<&str>,
 ) -> Map<String, Value> {
@@ -143,8 +158,8 @@ fn build_upgrade_context(
         context.insert(key.to_lowercase(), Value::String(value.clone()));
     }
 
-    context.insert("image_tag".into(), Value::String(target.into()));
-    context.insert("action_image_tag".into(), Value::String(target.into()));
+    context.insert("image_tag".into(), Value::String(core_target.into()));
+    context.insert("action_image_tag".into(), Value::String(action_target.into()));
     if let Some(registry) = registry {
         context.insert("image_registry".into(), Value::String(registry.into()));
     }
@@ -174,7 +189,14 @@ mod tests {
 
     #[test]
     fn carries_every_existing_env_value_forward_lowercased() {
-        let context = build_upgrade_context(&Map::new(), &seed(), "0.0.0-experimental-200-bbb", None, None);
+        let context = build_upgrade_context(
+            &Map::new(),
+            &seed(),
+            "0.0.0-experimental-200-bbb",
+            "0.0.0-experimental-200-bbb",
+            None,
+            None,
+        );
 
         // An installed-action token (not a wizard step) must survive the render.
         assert_eq!(
@@ -188,14 +210,15 @@ mod tests {
     }
 
     #[test]
-    fn overrides_both_image_tags_to_the_target() {
-        let target = "0.0.0-experimental-200-bbb";
-        let context = build_upgrade_context(&Map::new(), &seed(), target, None, None);
+    fn sets_each_image_tag_from_its_own_target() {
+        let core = "0.0.0-experimental-200-bbb";
+        let action = "0.0.0-experimental-777-ccc";
+        let context = build_upgrade_context(&Map::new(), &seed(), core, action, None, None);
 
-        assert_eq!(context.get("image_tag"), Some(&Value::String(target.into())));
+        assert_eq!(context.get("image_tag"), Some(&Value::String(core.into())));
         assert_eq!(
             context.get("action_image_tag"),
-            Some(&Value::String(target.into()))
+            Some(&Value::String(action.into()))
         );
     }
 
@@ -204,7 +227,7 @@ mod tests {
         let mut static_values = Map::new();
         static_values.insert("brand_new_key".into(), Value::String("default".into()));
 
-        let context = build_upgrade_context(&static_values, &seed(), "t", None, None);
+        let context = build_upgrade_context(&static_values, &seed(), "t", "t", None, None);
 
         assert_eq!(
             context.get("brand_new_key"),
@@ -217,7 +240,7 @@ mod tests {
         let mut static_values = Map::new();
         static_values.insert("initial_root_password".into(), Value::String("default".into()));
 
-        let context = build_upgrade_context(&static_values, &seed(), "t", None, None);
+        let context = build_upgrade_context(&static_values, &seed(), "t", "t", None, None);
 
         assert_eq!(
             context.get("initial_root_password"),
@@ -227,11 +250,12 @@ mod tests {
 
     #[test]
     fn applies_registry_and_edition_only_when_provided() {
-        let without = build_upgrade_context(&Map::new(), &seed(), "t", None, None);
+        let without = build_upgrade_context(&Map::new(), &seed(), "t", "t", None, None);
         assert!(!without.contains_key("image_registry"));
         assert!(!without.contains_key("image_edition"));
 
-        let with = build_upgrade_context(&Map::new(), &seed(), "t", Some("ghcr.io/x"), Some("cc"));
+        let with =
+            build_upgrade_context(&Map::new(), &seed(), "t", "t", Some("ghcr.io/x"), Some("cc"));
         assert_eq!(
             with.get("image_registry"),
             Some(&Value::String("ghcr.io/x".into()))

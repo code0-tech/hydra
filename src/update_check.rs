@@ -7,7 +7,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{action::resolve_dev_tag, env_file, ui};
+use crate::{
+    action::{resolve_action_dev_tag, resolve_dev_tag},
+    env_file, ui,
+};
 
 const ENV_PATH: &str = ".codezero/.env";
 const CACHE_PATH: &str = ".codezero/update-check.json";
@@ -30,8 +33,15 @@ struct UpdateCheck {
     /// Unix seconds the check completed at — drives the `CHECK_INTERVAL_SECS`
     /// throttle.
     checked_at: u64,
-    /// The latest tag reticulum's pipeline resolved to at that time.
+    /// The latest core-platform tag reticulum's pipeline resolved to at that
+    /// time.
     latest_tag: String,
+    /// The latest action tag centaurus' pipeline resolved to at that time.
+    /// Actions build on a separate pipeline-id counter, so the core tag can't
+    /// stand in for them. Defaulted so a cache written before actions were
+    /// tracked still deserializes (an empty tag just never reports "behind").
+    #[serde(default)]
+    latest_action_tag: String,
 }
 
 fn now_secs() -> u64 {
@@ -87,9 +97,11 @@ fn is_newer(current: &str, latest: &str) -> bool {
 /// best-effort — a failure just leaves the previous cache in place.
 pub fn run_background_check() -> anyhow::Result<()> {
     let latest_tag = resolve_dev_tag()?;
+    let latest_action_tag = resolve_action_dev_tag()?;
     write_cache(&UpdateCheck {
         checked_at: now_secs(),
         latest_tag,
+        latest_action_tag,
     })
 }
 
@@ -131,11 +143,20 @@ pub fn show_reminder() {
         .flatten()
         .unwrap_or_default();
 
-    if is_newer(&current_core, &cache.latest_tag) || is_newer(&current_actions, &cache.latest_tag) {
+    // Each tag is only comparable against its own project's latest — the core
+    // tag against reticulum's, the action tag against centaurus'.
+    let core_behind = is_newer(&current_core, &cache.latest_tag);
+    let actions_behind = is_newer(&current_actions, &cache.latest_action_tag);
+
+    if core_behind || actions_behind {
+        let latest = if core_behind {
+            &cache.latest_tag
+        } else {
+            &cache.latest_action_tag
+        };
         println!();
         ui::muted_line(&format!(
-            "A newer CodeZero build is available ({}).",
-            cache.latest_tag
+            "A newer CodeZero build is available ({latest})."
         ));
         ui::muted_line(
             "You can update now with `codezero --upgrade --dev` (experimental — a dedicated `upgrade` command is coming).",
@@ -143,12 +164,15 @@ pub fn show_reminder() {
     }
 }
 
-/// Records a known-current tag so a just-finished `upgrade` clears any pending
-/// reminder immediately, instead of waiting for the next background check.
-pub fn record_current_tag(tag: &str) {
+/// Records the just-applied core and action tags so a finished `upgrade` clears
+/// any pending reminder immediately, instead of waiting for the next background
+/// check. Writing both is what keeps the reminder from firing again on the
+/// action tag the moment the upgrade completes.
+pub fn record_current_tag(core_tag: &str, action_tag: &str) {
     let _ = write_cache(&UpdateCheck {
         checked_at: now_secs(),
-        latest_tag: tag.to_string(),
+        latest_tag: core_tag.to_string(),
+        latest_action_tag: action_tag.to_string(),
     });
 }
 
@@ -196,6 +220,7 @@ mod tests {
         assert!(is_stale(&Some(UpdateCheck {
             checked_at: now_secs().saturating_sub(CHECK_INTERVAL_SECS + 1),
             latest_tag: "x".into(),
+            latest_action_tag: "x".into(),
         })));
     }
 
@@ -204,6 +229,7 @@ mod tests {
         assert!(!is_stale(&Some(UpdateCheck {
             checked_at: now_secs(),
             latest_tag: "x".into(),
+            latest_action_tag: "x".into(),
         })));
     }
 
@@ -212,6 +238,7 @@ mod tests {
         let check = UpdateCheck {
             checked_at: 1_700_000_000,
             latest_tag: "0.0.0-experimental-42-deadbee".into(),
+            latest_action_tag: "0.0.0-experimental-7-c0ffee0".into(),
         };
 
         let json = serde_json::to_string(&check).unwrap();
@@ -219,5 +246,16 @@ mod tests {
 
         assert_eq!(parsed.checked_at, check.checked_at);
         assert_eq!(parsed.latest_tag, check.latest_tag);
+        assert_eq!(parsed.latest_action_tag, check.latest_action_tag);
+    }
+
+    #[test]
+    fn old_cache_without_action_tag_deserializes_to_empty() {
+        let json = r#"{"checked_at":1700000000,"latest_tag":"0.0.0-experimental-42-deadbee"}"#;
+        let parsed: UpdateCheck = serde_json::from_str(json).unwrap();
+
+        assert_eq!(parsed.latest_action_tag, "");
+        // An empty action tag is unparseable, so it never reports "behind".
+        assert!(!is_newer("0.0.0-experimental-1-aaa", &parsed.latest_action_tag));
     }
 }

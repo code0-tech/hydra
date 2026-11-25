@@ -43,10 +43,16 @@ pub fn aquila_action_env_prefix(identifier: &str) -> String {
     format!("AQUILA_ACTION_{}", key.to_uppercase().replace('-', "_"))
 }
 
-/// URL-encoded GitLab project path for the monorepo that builds every action
-/// image (each successful pipeline on `main` tags all rebuilt images with the
-/// same `RETICULUM_CONTAINER_VERSION`).
+/// URL-encoded GitLab project path for the reticulum monorepo that builds the
+/// core platform images (each successful pipeline on `main` tags all rebuilt
+/// images with the same `RETICULUM_CONTAINER_VERSION`).
 const RETICULUM_PROJECT: &str = "code0-tech%2Fdevelopment%2Freticulum";
+
+/// GitLab project id for the centaurus monorepo that builds every *action*
+/// image. Action images are tagged by centaurus' own CI, with pipeline ids from
+/// an entirely separate counter than reticulum's — so an action tag has to be
+/// resolved against this project, never reused from `resolve_dev_tag`.
+const CENTAURUS_PROJECT: &str = "80672463";
 
 #[derive(Debug, Deserialize)]
 struct GitlabPipeline {
@@ -60,43 +66,59 @@ struct GitlabPipeline {
 /// literally `main`: reticulum's own `main`-triggered pipelines are all
 /// `skipped` (its `.gitlab-ci.yml` `workflow: rules` only allow
 /// `api`/`pipeline`/`web`-sourced runs, so a plain push pipeline never runs).
-/// The real builds come from the GitHub Actions mirror
-/// (`code0-tech/reticulum`'s `ci.yml`) triggering GitLab's API via
-/// `Taucher2003/GitLab-Pipeline-Action`, which creates a synthetic
-/// `glpa/main/<sha>` ref per run rather than reusing `main`.
-const RETICULUM_DEV_REF_PREFIX: &str = "glpa/main/";
+/// The real builds come from the GitHub Actions mirror (each repo's `ci.yml`)
+/// triggering GitLab's API via `Taucher2003/GitLab-Pipeline-Action`, which
+/// creates a synthetic `glpa/main/<sha>` ref per run rather than reusing `main`
+/// — so the live `main` builds are found by this ref prefix, not by `main`
+/// itself. Both reticulum and centaurus use the identical mirror setup.
+const DEV_REF_PREFIX: &str = "glpa/main/";
 
-/// Resolves the tag of the latest successful `main` build by asking GitLab's
-/// pipeline API directly, reconstructing the same
-/// `0.0.0-experimental-<pipeline id>-<commit sha>` scheme reticulum's CI uses
-/// for `RETICULUM_CONTAINER_VERSION`. Used only for `--dev` installs — regular
-/// installs stay fully local and never make a network call.
-pub fn resolve_dev_tag() -> anyhow::Result<String> {
+/// Resolves the tag of the latest successful `main` build of a GitLab project by
+/// asking the pipeline API directly, reconstructing the same
+/// `0.0.0-experimental-<pipeline id>-<commit sha>` scheme the CI uses for its
+/// container version. `project` is a GitLab `:id` — a numeric id or a
+/// URL-encoded path. `subject` is only used to phrase errors.
+fn resolve_latest_main_tag(project: &str, subject: &str) -> anyhow::Result<String> {
     // Can't filter server-side by ref prefix, and `main`-triggered and
     // per-branch pipelines interleave in id order, so fetch a page and filter
     // client-side for the first that's actually a `glpa/main/*` build.
     let url = format!(
-        "https://gitlab.com/api/v4/projects/{RETICULUM_PROJECT}/pipelines?status=success&order_by=id&sort=desc&per_page=20"
+        "https://gitlab.com/api/v4/projects/{project}/pipelines?status=success&order_by=id&sort=desc&per_page=20"
     );
 
     let pipelines: Vec<GitlabPipeline> = ureq::get(&url)
         .call()
-        .map_err(|error| anyhow::anyhow!("Couldn't reach GitLab to resolve the dev tag: {error}"))?
+        .map_err(|error| {
+            anyhow::anyhow!("Couldn't reach GitLab to resolve the {subject} tag: {error}")
+        })?
         .body_mut()
         .read_json()
         .map_err(|error| anyhow::anyhow!("Couldn't parse GitLab's pipeline response: {error}"))?;
 
     let pipeline = pipelines
         .into_iter()
-        .find(|pipeline| pipeline.git_ref.starts_with(RETICULUM_DEV_REF_PREFIX))
-        .ok_or_else(|| {
-            anyhow::anyhow!("No successful pipeline found on reticulum's main branch")
-        })?;
+        .find(|pipeline| pipeline.git_ref.starts_with(DEV_REF_PREFIX))
+        .ok_or_else(|| anyhow::anyhow!("No successful pipeline found on {subject}'s main branch"))?;
 
     Ok(format!(
         "0.0.0-experimental-{}-{}",
         pipeline.id, pipeline.sha
     ))
+}
+
+/// Resolves the latest in-progress *core platform* image tag from reticulum's
+/// CI. Used only for `--dev` installs/upgrades — regular installs stay fully
+/// local and never make a network call.
+pub fn resolve_dev_tag() -> anyhow::Result<String> {
+    resolve_latest_main_tag(RETICULUM_PROJECT, "reticulum")
+}
+
+/// Resolves the latest in-progress *action* image tag from centaurus' CI.
+/// Action images live on a separate pipeline-id counter than the core platform,
+/// so this must be resolved independently of [`resolve_dev_tag`] rather than
+/// reusing the core tag.
+pub fn resolve_action_dev_tag() -> anyhow::Result<String> {
+    resolve_latest_main_tag(CENTAURUS_PROJECT, "centaurus")
 }
 
 fn default_aquila_url_var() -> String {

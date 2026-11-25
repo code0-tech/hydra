@@ -6,7 +6,8 @@ use serde_json::{Map, Value};
 
 use crate::{
     action::{
-        SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions, resolve_dev_tag,
+        SERVICE_CONFIGURATION_PATH, ServiceConfiguration, carry_forward_actions,
+        resolve_action_dev_tag, resolve_dev_tag,
     },
     bundle::{
         BundleSource, Choice, SetupBundle, Step, default_choice, generate_token, join_multiselect,
@@ -103,13 +104,18 @@ fn matching_option_index(options: &[Choice], value: &str) -> Option<usize> {
 }
 
 /// Resolves every step's value in `--dev` mode without prompting: `image_tag`
-/// specifically comes from reticulum's latest `main` build (the one step that
-/// actually needs a live lookup); everything else uses the manifest's own
-/// declared default — a step with nothing to fall back to is a manifest bug,
-/// not something `--dev` can guess around.
+/// and `action_image_tag` come from the latest `main` builds of reticulum and
+/// centaurus respectively (the two steps that actually need a live lookup, and
+/// each from its own project — their pipeline-id counters are unrelated);
+/// everything else uses the manifest's own declared default — a step with
+/// nothing to fall back to is a manifest bug, not something `--dev` can guess
+/// around.
 fn auto_dev_value(step: &Step) -> anyhow::Result<Value> {
     if step.id() == "image_tag" {
         return Ok(Value::String(resolve_dev_tag()?));
+    }
+    if step.id() == "action_image_tag" {
+        return Ok(Value::String(resolve_action_dev_tag()?));
     }
 
     match step {
